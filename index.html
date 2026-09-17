@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Río Aventuras</title>
+
+<style>
+    body {
+        margin: 0;
+        background: #111;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        font-family: sans-serif;
+    }
+
+    canvas {
+        border-radius: 20px;
+        max-width: 95vw;
+        max-height: 90vh;
+        touch-action: none;
+    }
+</style>
+</head>
+
+<body>
+
+<canvas id="juego" width="400" height="700"></canvas>
+
+<script>
+
+const canvas = document.getElementById("juego");
+const ctx = canvas.getContext("2d");
+
+// ----------------------
+// ESTADO DEL JUEGO
+// ----------------------
+
+let barco = {
+    x: 200,
+    y: 570,
+    velocidad: 0,
+    inclinacion: 0
+};
+
+let rocas = [];
+
+let puntuacion = 0;
+let jugando = true;
+let tiempo = 0;
+
+
+// ----------------------
+// CREAR UNA ROCA
+// ----------------------
+
+function crearRoca() {
+
+    rocas.push({
+        x: 70 + Math.random() * 260,
+        y: -40,
+        velocidad: 3 + Math.random() * 2,
+        tamaño: 18 + Math.random() * 12
+    });
+
+}
+
+
+// ----------------------
+// DIBUJAR RÍO
+// ----------------------
+
+function dibujarRio() {
+
+    // Agua
+    ctx.fillStyle = "#43a6c6";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Orillas
+    ctx.fillStyle = "#65a84b";
+
+    ctx.fillRect(0, 0, 55, canvas.height);
+    ctx.fillRect(345, 0, 55, canvas.height);
+
+    // Olas
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 2;
+
+    for (let y = -20; y < canvas.height; y += 55) {
+
+        ctx.beginPath();
+
+        for (let x = 55; x < 345; x += 20) {
+
+            let onda =
+                Math.sin(x * 0.05 + tiempo * 0.08) * 5;
+
+            ctx.lineTo(x, y + onda);
+
+        }
+
+        ctx.stroke();
+    }
+}
+
+
+// ----------------------
+// DIBUJAR BARCO
+// ----------------------
+
+function dibujarBarco() {
+
+    ctx.save();
+
+    ctx.translate(barco.x, barco.y);
+
+    ctx.rotate(barco.inclinacion);
+
+    // Tronco
+    ctx.fillStyle = "#87552d";
+
+    ctx.beginPath();
+
+    ctx.ellipse(
+        0,
+        0,
+        48,
+        18,
+        0,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+
+
+    // Niño
+    ctx.fillStyle = "#e09b72";
+
+    ctx.beginPath();
+
+    ctx.arc(
+        0,
+        -25,
+        10,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+
+
+    // Cuerpo
+    ctx.fillStyle = "#e95c4a";
+
+    ctx.fillRect(
+        -9,
+        -18,
+        18,
+        20
+    );
+
+
+    // Remo
+    ctx.strokeStyle = "#6b4226";
+    ctx.lineWidth = 5;
+
+    ctx.beginPath();
+
+    ctx.moveTo(-25, -8);
+    ctx.lineTo(-55, -35);
+
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+
+// ----------------------
+// DIBUJAR ROCA
+// ----------------------
+
+function dibujarRoca(roca) {
+
+    ctx.fillStyle = "#666";
+
+    ctx.beginPath();
+
+    ctx.arc(
+        roca.x,
+        roca.y,
+        roca.tamaño,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+}
+
+
+// ----------------------
+// ACTUALIZAR BARCO
+// ----------------------
+
+function actualizarBarco() {
+
+    barco.x += barco.velocidad;
+
+    barco.velocidad *= 0.88;
+
+    // Movimiento de las olas
+
+    barco.y =
+        570 +
+        Math.sin(tiempo * 0.08) * 5;
+
+    // Inclinación
+
+    barco.inclinacion =
+        barco.velocidad * 0.025;
+
+    // Límites del río
+
+    if (barco.x < 80) {
+        barco.x = 80;
+    }
+
+    if (barco.x > 320) {
+        barco.x = 320;
+    }
+}
+
+
+// ----------------------
+// ACTUALIZAR ROCAS
+// ----------------------
+
+function actualizarRocas() {
+
+    for (let i = rocas.length - 1; i >= 0; i--) {
+
+        let roca = rocas[i];
+
+        roca.y += roca.velocidad;
+
+
+        // Colisión
+
+        let distancia =
+            Math.hypot(
+                roca.x - barco.x,
+                roca.y - barco.y
+            );
+
+        if (distancia < roca.tamaño + 35) {
+
+            jugando = false;
+
+        }
+
+
+        // Si pasó el barco
+
+        if (roca.y > canvas.height + 50) {
+
+            rocas.splice(i, 1);
+
+            puntuacion++;
+
+        }
+    }
+}
+
+
+// ----------------------
+// BUCLE PRINCIPAL
+// ----------------------
+
+function actualizar() {
+
+    if (!jugando) return;
+
+    tiempo++;
+
+    actualizarBarco();
+    actualizarRocas();
+
+    // Crear rocas periódicamente
+
+    if (tiempo % 70 === 0) {
+
+        crearRoca();
+
+    }
+}
+
+
+// ----------------------
+// DIBUJAR TODO
+// ----------------------
+
+function dibujar() {
+
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    dibujarRio();
+
+    for (let roca of rocas) {
+
+        dibujarRoca(roca);
+
+    }
+
+    dibujarBarco();
+
+
+    // Puntuación
+
+    ctx.fillStyle = "white";
+    ctx.font = "bold 24px sans-serif";
+
+    ctx.fillText(
+        "⭐ " + puntuacion,
+        20,
+        40
+    );
+
+
+    // Game Over
+
+    if (!jugando) {
+
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
+
+        ctx.fillStyle = "white";
+        ctx.font = "bold 32px sans-serif";
+
+        ctx.textAlign = "center";
+
+        ctx.fillText(
+            "¡Choque!",
+            200,
+            320
+        );
+
+        ctx.font = "20px sans-serif";
+
+        ctx.fillText(
+            "Puntuación: " + puntuacion,
+            200,
+            360
+        );
+
+        ctx.textAlign = "left";
+    }
+}
+
+
+// ----------------------
+// BUCLE DE ANIMACIÓN
+// ----------------------
+
+function bucle() {
+
+    actualizar();
+
+    dibujar();
+
+    requestAnimationFrame(bucle);
+
+}
+
+bucle();
+
+
+// ----------------------
+// CONTROLES
+// ----------------------
+
+canvas.addEventListener(
+    "pointerdown",
+    function(event) {
+
+        const rect =
+            canvas.getBoundingClientRect();
+
+        const x =
+            event.clientX - rect.left;
+
+        if (x < canvas.width / 2) {
+
+            barco.velocidad -= 1.5;
+
+        } else {
+
+            barco.velocidad += 1.5;
+
+        }
+
+    }
+);
+
+</script>
+
+</body>
+</html>
