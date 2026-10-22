@@ -10,6 +10,10 @@ pantalla, añade profundidad gradual y seguimiento horizontal muy suave de la
 lancha. Conserva los controles, la puntuación y el récord local de la versión
 anterior. No añade todavía cuentas ni servicios de Google.
 
+La versión 1.3 intensifica la perspectiva del río y añade árboles en capas,
+orillas definidas, sombras bajo lancha y obstáculos y salpicaduras al girar.
+Sigue siendo un juego 2D Canvas; no añade física con inercia ni servicios online.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
