@@ -4,8 +4,17 @@ const vm = require('node:vm');
 
 const events = new Map();
 const operations = [];
+const translations = [];
 const gradient = { addColorStop() {} };
-const context = new Proxy({ createLinearGradient: () => gradient, createRadialGradient: () => gradient }, {
+const context = new Proxy({
+  createLinearGradient: () => gradient,
+  createRadialGradient: () => gradient,
+  translate(x, y) {
+    assert(Number.isFinite(x) && Number.isFinite(y), 'translate received a non-finite value');
+    translations.push([x, y]);
+    operations.push('translate');
+  }
+}, {
   get(target, key) {
     if (key in target) return target[key];
     return (...args) => {
@@ -47,10 +56,27 @@ const sandbox = {
 
 vm.runInNewContext(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
 assert.equal(canvas.height, 1000, 'the playfield should fit a tall phone');
-nextFrame(16);
+function boatXAt(time) {
+  translations.length = 0;
+  nextFrame(time);
+  const position = translations.filter(([, y]) => y > 840 && y < 860).at(-1);
+  assert(position, 'the boat should be visible near the bottom of the screen');
+  return position[0];
+}
+const startingX = boatXAt(16);
 events.get('play:click')();
 events.get('game:pointerdown')({ pointerId: 1, clientX: 350 });
-for (let time = 32; time < 2500; time += 16) nextFrame(time);
+const firstX = boatXAt(32);
+const secondX = boatXAt(48);
+assert(secondX - firstX > firstX - startingX, 'the boat should accelerate after steering starts');
+events.get('game:pointerup')({ pointerId: 2 });
+let heldX = secondX;
+for (let time = 64; time <= 176; time += 16) heldX = boatXAt(time);
+assert(heldX - startingX > 10, 'a second finger must not cancel the steering finger');
+events.get('game:pointerup')({ pointerId: 1 });
+const coastingX = boatXAt(192);
+assert(coastingX > heldX, 'the boat should coast briefly after touch release');
+for (let time = 208; time < 2500; time += 16) nextFrame(time);
 assert(operations.includes('scale'), 'the depth projection must draw scaled objects');
 assert(operations.includes('translate'), 'the boat and obstacles must be drawn');
 assert(operations.includes('clip'), 'the perspective river must clip water to its banks');

@@ -13,11 +13,13 @@
   let height = canvas.height;
   const bestKey = 'rio-aventura-best-v1';
   let state = 'ready';
-  let boat, obstacles, particles, score, lives, elapsed, spawnIn, immunity, direction;
+  let boat, obstacles, particles, score, lives, elapsed, spawnIn, immunity, direction, riverSpeed;
   let wakeTimer = 0;
   let impact = 0;
   let cameraX = 0;
   let lastFrame = 0;
+  let activePointerId = null;
+  const heldKeys = { left: false, right: false };
 
   // Keep the original 450-unit playfield while filling taller phone screens.
   function resizeStage() {
@@ -41,7 +43,7 @@
   }
 
   function reset() {
-    boat = { x: width / 2, y: height - 150, tilt: 0 };
+    boat = { x: width / 2, y: height - 150, vx: 0, tilt: 0, lean: 0 };
     obstacles = [];
     particles = [];
     score = 0;
@@ -50,6 +52,10 @@
     spawnIn = 0.6;
     immunity = 0;
     direction = 0;
+    riverSpeed = 140;
+    activePointerId = null;
+    heldKeys.left = false;
+    heldKeys.right = false;
     wakeTimer = 0;
     impact = 0;
     cameraX = 0;
@@ -78,6 +84,8 @@
   function finish() {
     state = 'over';
     direction = 0;
+    activePointerId = null;
+    boat.vx = 0;
     const best = Math.max(score, Number(localStorage.getItem(bestKey)) || 0);
     localStorage.setItem(bestKey, String(best));
     showOverlay('¡Fin del<br>viaje!', `Lograste ${score} puntos. Tu récord es ${best}.`, 'Jugar otra vez');
@@ -103,15 +111,28 @@
     elapsed += dt;
     immunity = Math.max(0, immunity - dt);
     impact = Math.max(0, impact - dt * 2.6);
-    boat.x = Math.max(74, Math.min(width - 74, boat.x + direction * 265 * dt));
-    boat.tilt += ((direction * 0.18) - boat.tilt) * Math.min(1, dt * 7);
+    const targetVx = direction * 285;
+    const velocityChange = targetVx - boat.vx;
+    const acceleration = direction === 0 ? 1180 : 1050;
+    boat.vx += Math.sign(velocityChange) * Math.min(Math.abs(velocityChange), acceleration * dt);
+    boat.x += boat.vx * dt;
+    if (boat.x < 74 || boat.x > width - 74) {
+      boat.x = Math.max(74, Math.min(width - 74, boat.x));
+      boat.vx = 0;
+    }
+    const turnAmount = boat.vx / 285;
+    boat.tilt += ((turnAmount * 0.17 + direction * 0.025) - boat.tilt) * Math.min(1, dt * 7);
+    boat.lean += ((turnAmount * 0.20 + direction * 0.07) - boat.lean) * Math.min(1, dt * 8);
     const cameraTarget = (boat.x - width / 2) * 0.16;
     cameraX += (cameraTarget - cameraX) * Math.min(1, dt * 4);
+    const targetRiverSpeed = Math.min(390, 190 + elapsed * 3.2);
+    riverSpeed += Math.min(targetRiverSpeed - riverSpeed, 135 * dt);
     wakeTimer -= dt;
     if (wakeTimer <= 0) {
-      splash(boat.x + (Math.random() - 0.5) * 28, boat.y + 35, 3, '#e7ffff');
-      if (direction !== 0) splash(boat.x - direction * 36, boat.y + 15, 2, '#c9f7f2');
-      wakeTimer = 0.085;
+      const spray = Math.abs(turnAmount);
+      splash(boat.x + (Math.random() - 0.5) * 28, boat.y + 35, 2 + Math.round(spray * 2), '#e7ffff');
+      if (spray > 0.3) splash(boat.x - Math.sign(boat.vx) * 36, boat.y + 15, 2, '#c9f7f2');
+      wakeTimer = 0.12 - spray * 0.035;
     }
     for (const particle of particles) {
       particle.x += particle.vx * dt;
@@ -121,13 +142,12 @@
     }
     particles = particles.filter(particle => particle.age < particle.life);
     spawnIn -= dt;
-    const speed = Math.min(390, 190 + elapsed * 3.2);
     if (spawnIn <= 0) {
       spawn();
       spawnIn = Math.max(0.48, 1.1 - elapsed * 0.012) + Math.random() * 0.28;
     }
     for (const item of obstacles) {
-      item.y += speed * dt;
+      item.y += riverSpeed * dt;
       if (!item.counted && item.y > boat.y + 38) {
         item.counted = true;
         score++;
@@ -138,6 +158,8 @@
         lives--;
         immunity = 1.4;
         impact = 1;
+        boat.vx *= 0.45;
+        riverSpeed *= 0.75;
         splash(boat.x, boat.y, 22, '#ffffff');
         updateHud();
         if (lives === 0) { finish(); return; }
@@ -273,6 +295,24 @@
     ctx.restore();
   }
 
+  function drawWake() {
+    const x = projectedX(boat.x, boat.y);
+    const turn = boat.vx / 285;
+    const length = 44 + riverSpeed * 0.07 + Math.abs(turn) * 20;
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const side of [-1, 1]) {
+      ctx.strokeStyle = '#e8ffffa8';
+      ctx.lineWidth = 3 + Math.abs(turn) * 2;
+      ctx.beginPath();
+      ctx.moveTo(x + side * 25, boat.y + 26);
+      ctx.quadraticCurveTo(x + side * 37 - turn * 12, boat.y + length * 0.65,
+        x + side * (44 + Math.abs(turn) * 10) - turn * 18, boat.y + length);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   function drawBoat() {
     if (immunity > 0 && Math.floor(immunity * 10) % 2 === 0) return;
     ctx.save();
@@ -309,7 +349,7 @@
     ctx.fill();
     ctx.fillStyle = '#653b2c';
     ctx.fillRect(-27, 20, 54, 6);
-    const stroke = Math.sin(elapsed * 11);
+    const stroke = Math.sin(elapsed * (9 + riverSpeed / 100)) * (0.65 + Math.abs(boat.vx) / 950);
     ctx.strokeStyle = '#633b28';
     ctx.lineWidth = 5;
     ctx.lineCap = 'round';
@@ -323,6 +363,9 @@
     ctx.rotate(-0.55 + stroke * 0.15);
     ctx.beginPath(); ctx.ellipse(0, 0, 5, 15, 0, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
+    ctx.translate(0, 5);
+    ctx.rotate(boat.lean);
+    ctx.translate(0, -5);
     ctx.fillStyle = '#ed7656';
     ctx.beginPath();
     ctx.ellipse(0, 7, 13, 19, 0, 0, Math.PI * 2);
@@ -361,6 +404,7 @@
     ctx.save();
     if (impact > 0) ctx.translate((Math.random() - 0.5) * impact * 13, (Math.random() - 0.5) * impact * 13);
     drawRiver();
+    drawWake();
     [...obstacles].sort((a, b) => a.y - b.y).forEach(drawObstacle);
     drawParticles();
     drawBoat();
@@ -385,22 +429,37 @@
     return x < width / 2 ? -1 : 1;
   }
 
+  function restoreKeyboardDirection() {
+    direction = Number(heldKeys.right) - Number(heldKeys.left);
+  }
+
   canvas.addEventListener('pointerdown', event => {
-    if (state !== 'playing') return;
+    if (state !== 'playing' || activePointerId !== null) return;
+    activePointerId = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
     direction = pointerDirection(event);
   });
   canvas.addEventListener('pointermove', event => {
-    if (state === 'playing' && event.buttons) direction = pointerDirection(event);
+    if (state === 'playing' && event.pointerId === activePointerId) direction = pointerDirection(event);
   });
   for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    canvas.addEventListener(name, () => { direction = 0; });
+    canvas.addEventListener(name, event => {
+      if (event.pointerId !== activePointerId) return;
+      activePointerId = null;
+      restoreKeyboardDirection();
+    });
   }
   window.addEventListener('keydown', event => {
-    if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') direction = -1;
-    if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') direction = 1;
+    if (state !== 'playing') return;
+    if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') heldKeys.left = true;
+    if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') heldKeys.right = true;
+    if (activePointerId === null) restoreKeyboardDirection();
   });
-  window.addEventListener('keyup', () => { direction = 0; });
+  window.addEventListener('keyup', event => {
+    if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') heldKeys.left = false;
+    if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') heldKeys.right = false;
+    if (activePointerId === null) restoreKeyboardDirection();
+  });
   play.addEventListener('click', () => {
     if (state === 'paused') {
       state = 'playing';
@@ -414,6 +473,10 @@
     if (state === 'playing') {
       state = 'paused';
       direction = 0;
+      activePointerId = null;
+      boat.vx = 0;
+      heldKeys.left = false;
+      heldKeys.right = false;
       pause.textContent = '▶';
       showOverlay('En pausa', `Llevas ${score} puntos.`, 'Continuar');
     }
@@ -422,6 +485,10 @@
     if (document.hidden && state === 'playing') {
       state = 'paused';
       direction = 0;
+      activePointerId = null;
+      boat.vx = 0;
+      heldKeys.left = false;
+      heldKeys.right = false;
       pause.textContent = '▶';
       showOverlay('En pausa', `Llevas ${score} puntos.`, 'Continuar');
     }
