@@ -19,6 +19,10 @@ reacción del niño al girar y una estela que cambia con el movimiento. El contr
 táctil sigue un solo dedo para evitar cambios involuntarios. Las colisiones,
 las vidas, los puntos y el récord local se mantienen; Google sigue pendiente.
 
+La versión 1.5 añade brillos móviles y espuma junto a las orillas. Rocas y troncos
+levantan pequeñas ondas y tienen más detalles de superficie. Estos cambios son
+visuales: el tamaño de colisión y las reglas del juego no cambian.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta

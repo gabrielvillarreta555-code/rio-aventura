@@ -207,6 +207,17 @@
     water.addColorStop(1, '#64c8c2');
     ctx.fillStyle = water;
     ctx.fillRect(0, 0, width, height);
+    const shimmer = (elapsed * 82) % 190;
+    for (let y = shimmer - 190; y < height + 90; y += 190) {
+      const left = riverEdge(0, y) + 18;
+      const right = riverEdge(1, y) - 18;
+      ctx.strokeStyle = '#dcfff038';
+      ctx.lineWidth = 14 * depthAt(y);
+      ctx.beginPath();
+      ctx.moveTo(left, y + 18);
+      ctx.bezierCurveTo(left + 52, y - 12, right - 55, y + 46, right, y + 10);
+      ctx.stroke();
+    }
     for (const side of [0, 1]) {
       const bankShade = ctx.createLinearGradient(riverEdge(side, height / 2), 0, width / 2, 0);
       bankShade.addColorStop(0, '#113f5688');
@@ -218,7 +229,7 @@
     const flow = (elapsed * 125) % 125;
     for (let y = flow - 125; y < height + 50; y += 125) {
       for (const x of [115, 225, 335]) {
-        const center = projectedX(x, y);
+        const center = projectedX(x + Math.sin(elapsed * 1.8 + y * 0.018) * 5, y);
         const size = 12 * depthAt(y);
         ctx.strokeStyle = '#e6ffff99';
         ctx.lineWidth = 2.5 * depthAt(y);
@@ -230,6 +241,19 @@
         ctx.beginPath();
         ctx.moveTo(center - size * 0.45, y + 9);
         ctx.lineTo(center + size * 0.45, y + 9);
+        ctx.stroke();
+      }
+    }
+    const shoreFlow = (elapsed * 105) % 92;
+    for (const side of [0, 1]) {
+      const inward = side ? -1 : 1;
+      for (let y = shoreFlow - 92; y < height + 25; y += 92) {
+        const x = riverEdge(side, y) + inward * (13 + 5 * Math.sin(y * 0.025));
+        ctx.strokeStyle = '#d8fff1aa';
+        ctx.lineWidth = 2 * depthAt(y);
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo(x + inward * 9, y - 6, x + inward * 17, y + 2);
         ctx.stroke();
       }
     }
@@ -254,6 +278,16 @@
     ctx.save();
     ctx.translate(projectedX(item.x, item.y), item.y + Math.sin(elapsed * 3 + item.phase) * 3);
     ctx.scale(depthAt(item.y), depthAt(item.y));
+    const ripple = (elapsed * 24 + item.phase * 4) % 18;
+    ctx.strokeStyle = '#e9ffffa8';
+    ctx.lineWidth = 2;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * (item.radius + 2), 10);
+      ctx.quadraticCurveTo(side * (item.radius + 15), 17 + ripple * 0.4,
+        side * (item.radius + 12), 24 + ripple);
+      ctx.stroke();
+    }
     if (item.kind === 'rock') {
       ctx.fillStyle = '#0d3b4977';
       ctx.beginPath();
@@ -269,6 +303,13 @@
       ctx.fillStyle = stone;
       ctx.beginPath();
       ctx.arc(0, -3, item.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#718d94';
+      ctx.beginPath();
+      ctx.moveTo(-item.radius * 0.62, 1);
+      ctx.lineTo(-3, -item.radius * 0.62);
+      ctx.lineTo(9, item.radius * 0.42);
+      ctx.closePath();
       ctx.fill();
       ctx.fillStyle = '#aebdc0';
       ctx.beginPath();
@@ -286,6 +327,8 @@
       ctx.fillRect(-31, -12, 62, 24);
       ctx.fillStyle = '#aa7045';
       ctx.fillRect(-31, -12, 62, 5);
+      ctx.fillStyle = '#c38b58';
+      ctx.beginPath(); ctx.ellipse(-31, 0, 5, 12, 0, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#d3955c';
       ctx.lineWidth = 2;
       for (const x of [-18, 4, 20]) {

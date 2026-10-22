@@ -80,5 +80,6 @@ for (let time = 208; time < 2500; time += 16) nextFrame(time);
 assert(operations.includes('scale'), 'the depth projection must draw scaled objects');
 assert(operations.includes('translate'), 'the boat and obstacles must be drawn');
 assert(operations.includes('clip'), 'the perspective river must clip water to its banks');
+assert(operations.filter(name => name === 'bezierCurveTo').length > 5, 'moving water shimmer should be drawn');
 assert(operations.filter(name => name === 'arc').length > 20, 'layered riverside trees should be drawn');
 console.log('Visual smoke test passed');
