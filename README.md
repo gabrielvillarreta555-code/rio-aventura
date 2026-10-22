@@ -28,5 +28,15 @@ visuales: el tamaño de colisión y las reglas del juego no cambian.
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
 publica el artefacto **Rio-Aventura-APK**, que contiene `app-debug.apk`.
 
+Cada pull request contra `main` ejecuta el test visual (`node tests/visual-smoke.cjs`)
+y compila el APK; el artefacto se llama **Rio-Aventura-APK-PR-<número>**.
+
 El proyecto usa Java 17, Android Gradle Plugin 8.7.3, Gradle 8.9 y Android SDK 35.
+
+## Equipo
+
+Codex implementa, Claude Code revisa y una persona fusiona. Las reglas están en
+`AGENTS.md` (Codex) y `CLAUDE.md` (Claude). El workflow **Revisión de Claude**
+comenta automáticamente cada pull request; nunca aprueba ni fusiona. Añade la
+etiqueta `sin-revision-claude` a un pull request para omitir la revisión.
 No necesita conexión a internet para jugar ni permisos especiales.
