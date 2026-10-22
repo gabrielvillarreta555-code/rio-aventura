@@ -14,6 +14,11 @@ La versión 1.3 intensifica la perspectiva del río y añade árboles en capas,
 orillas definidas, sombras bajo lancha y obstáculos y salpicaduras al girar.
 Sigue siendo un juego 2D Canvas; no añade física con inercia ni servicios online.
 
+La versión 1.4 añade aceleración y frenado lateral con inercia suave, una pequeña
+reacción del niño al girar y una estela que cambia con el movimiento. El control
+táctil sigue un solo dedo para evitar cambios involuntarios. Las colisiones,
+las vidas, los puntos y el récord local se mantienen; Google sigue pendiente.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
