@@ -9,7 +9,7 @@
     * { box-sizing: border-box; }
     html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #102e35; font-family: system-ui, sans-serif; color: white; }
     body { display: grid; place-items: center; }
-    #stage { position: relative; width: min(100vw, 56.25vh); height: min(100vh, 177.78vw); max-width: 540px; overflow: hidden; background: #58b8c5; box-shadow: 0 0 50px #071f29; }
+    #stage { position: relative; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; background: #58b8c5; }
     canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     #hud { position: absolute; top: max(18px, env(safe-area-inset-top)); left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; pointer-events: none; font-weight: 800; text-shadow: 0 2px 8px #153a49; }
     #hud span { padding: 8px 12px; border-radius: 16px; background: #0d3749aa; }

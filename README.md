@@ -5,6 +5,11 @@ pausa y vuelve a jugar. Mantén pulsado el lado izquierdo o derecho de la pantal
 para mover el bote. La versión 1.1 añade corriente y orillas animadas, estela,
 salpicaduras, remo en movimiento y efecto visual al chocar.
 
+La versión 1.2 (primera etapa visual 2.5D) adapta el juego a la altura de la
+pantalla, añade profundidad gradual y seguimiento horizontal muy suave de la
+lancha. Conserva los controles, la puntuación y el récord local de la versión
+anterior. No añade todavía cuentas ni servicios de Google.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta

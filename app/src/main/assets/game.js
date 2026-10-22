@@ -10,13 +10,35 @@
   const scoreEl = document.getElementById('score');
   const livesEl = document.getElementById('lives');
   const width = canvas.width;
-  const height = canvas.height;
+  let height = canvas.height;
   const bestKey = 'rio-aventura-best-v1';
   let state = 'ready';
   let boat, obstacles, particles, score, lives, elapsed, spawnIn, immunity, direction;
   let wakeTimer = 0;
   let impact = 0;
+  let cameraX = 0;
   let lastFrame = 0;
+
+  // Keep the original 450-unit playfield while filling taller phone screens.
+  function resizeStage() {
+    const bounds = canvas.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    const nextHeight = Math.max(800, Math.round(width * bounds.height / bounds.width));
+    if (nextHeight === height) return;
+    const difference = nextHeight - height;
+    canvas.height = nextHeight;
+    height = nextHeight;
+    if (boat) boat.y += difference;
+    if (obstacles) obstacles.forEach(item => { item.y += difference; });
+  }
+
+  function depthAt(y) {
+    return 0.76 + 0.24 * Math.max(0, Math.min(1, y / height));
+  }
+
+  function projectedX(x, y) {
+    return width / 2 + (x - width / 2) * depthAt(y) - cameraX;
+  }
 
   function reset() {
     boat = { x: width / 2, y: height - 150, tilt: 0 };
@@ -30,6 +52,7 @@
     direction = 0;
     wakeTimer = 0;
     impact = 0;
+    cameraX = 0;
     updateHud();
   }
 
@@ -82,6 +105,8 @@
     impact = Math.max(0, impact - dt * 2.6);
     boat.x = Math.max(74, Math.min(width - 74, boat.x + direction * 265 * dt));
     boat.tilt += ((direction * 0.18) - boat.tilt) * Math.min(1, dt * 7);
+    const cameraTarget = (boat.x - width / 2) * 0.11;
+    cameraX += (cameraTarget - cameraX) * Math.min(1, dt * 4);
     wakeTimer -= dt;
     if (wakeTimer <= 0) {
       splash(boat.x + (Math.random() - 0.5) * 28, boat.y + 35, 2, '#e7ffff');
@@ -107,7 +132,8 @@
         score++;
         updateHud();
       }
-      if (immunity === 0 && Math.hypot(item.x - boat.x, item.y - boat.y) < item.radius + 23) {
+      const separation = Math.hypot(projectedX(item.x, item.y) - projectedX(boat.x, boat.y), item.y - boat.y);
+      if (immunity === 0 && separation < item.radius * depthAt(item.y) + 23 * depthAt(boat.y)) {
         lives--;
         immunity = 1.4;
         impact = 1;
@@ -127,29 +153,37 @@
     ctx.fillStyle = water;
     ctx.fillRect(0, 0, width, height);
     const flow = (elapsed * 130) % 130;
-    ctx.fillStyle = '#2f8d76';
-    ctx.fillRect(0, 0, 52, height);
-    ctx.fillRect(width - 52, 0, 52, height);
-    ctx.fillStyle = '#8dcc6b';
-    ctx.fillRect(0, 0, 43, height);
-    ctx.fillRect(width - 43, 0, 43, height);
+    for (const side of [0, 1]) {
+      const topEdge = side ? projectedX(width - 52, 0) : projectedX(52, 0);
+      const bottomEdge = side ? projectedX(width - 52, height) : projectedX(52, height);
+      ctx.fillStyle = '#2f8d76';
+      ctx.beginPath();
+      if (side) {
+        ctx.moveTo(topEdge, 0); ctx.lineTo(width, 0);
+        ctx.lineTo(width, height); ctx.lineTo(bottomEdge, height);
+      } else {
+        ctx.moveTo(0, 0); ctx.lineTo(topEdge, 0);
+        ctx.lineTo(bottomEdge, height); ctx.lineTo(0, height);
+      }
+      ctx.closePath(); ctx.fill();
+    }
     ctx.strokeStyle = '#d7f7eb88';
     ctx.lineWidth = 2.5;
     for (let y = flow - 130; y < height + 80; y += 130) {
       for (const x of [98, 213, 344]) {
         ctx.beginPath();
-        ctx.moveTo(x - 18, y);
-        ctx.quadraticCurveTo(x, y - 10, x + 18, y);
+        ctx.moveTo(projectedX(x - 18, y), y);
+        ctx.quadraticCurveTo(projectedX(x, y), y - 10, projectedX(x + 18, y), y);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(x - 8, y + 10);
-        ctx.quadraticCurveTo(x, y + 5, x + 8, y + 10);
+        ctx.moveTo(projectedX(x - 8, y), y + 10);
+        ctx.quadraticCurveTo(projectedX(x, y), y + 5, projectedX(x + 8, y), y + 10);
         ctx.stroke();
       }
     }
     for (let y = (elapsed * 95) % 100 - 100; y < height + 70; y += 100) {
       for (const side of [0, 1]) {
-        const x = side ? width - 25 : 25;
+        const x = projectedX(side ? width - 25 : 25, y);
         const sway = Math.sin(elapsed * 2 + y * 0.04 + side) * 4;
         ctx.strokeStyle = '#315d37';
         ctx.lineWidth = 3;
@@ -167,7 +201,8 @@
 
   function drawObstacle(item) {
     ctx.save();
-    ctx.translate(item.x, item.y + Math.sin(elapsed * 3 + item.phase) * 3);
+    ctx.translate(projectedX(item.x, item.y), item.y + Math.sin(elapsed * 3 + item.phase) * 3);
+    ctx.scale(depthAt(item.y), depthAt(item.y));
     if (item.kind === 'rock') {
       ctx.fillStyle = '#dff8ed88';
       ctx.beginPath();
@@ -206,7 +241,8 @@
   function drawBoat() {
     if (immunity > 0 && Math.floor(immunity * 10) % 2 === 0) return;
     ctx.save();
-    ctx.translate(boat.x, boat.y + Math.sin(elapsed * 7) * 3);
+    ctx.translate(projectedX(boat.x, boat.y), boat.y + Math.sin(elapsed * 7) * 3);
+    ctx.scale(depthAt(boat.y), depthAt(boat.y));
     ctx.rotate(boat.tilt + Math.sin(elapsed * 3) * 0.025);
     ctx.fillStyle = '#e9ffff99';
     ctx.beginPath();
@@ -275,7 +311,8 @@
       ctx.globalAlpha = Math.max(0, 1 - particle.age / particle.life);
       ctx.fillStyle = particle.color;
       ctx.beginPath();
-      ctx.arc(particle.x, particle.y, particle.radius * (1 + particle.age), 0, Math.PI * 2);
+      ctx.arc(projectedX(particle.x, particle.y), particle.y,
+        particle.radius * depthAt(particle.y) * (1 + particle.age), 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -285,7 +322,7 @@
     ctx.save();
     if (impact > 0) ctx.translate((Math.random() - 0.5) * impact * 13, (Math.random() - 0.5) * impact * 13);
     drawRiver();
-    obstacles.forEach(drawObstacle);
+    [...obstacles].sort((a, b) => a.y - b.y).forEach(drawObstacle);
     drawParticles();
     drawBoat();
     ctx.restore();
@@ -350,6 +387,8 @@
       showOverlay('En pausa', `Llevas ${score} puntos.`, 'Continuar');
     }
   });
+  resizeStage();
+  window.addEventListener('resize', resizeStage);
   reset();
   requestAnimationFrame(frame);
 })();
