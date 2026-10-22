@@ -2,7 +2,8 @@
 
 Juego de río sin conexión. Esquiva rocas y troncos, suma puntos, conserva tu récord,
 pausa y vuelve a jugar. Mantén pulsado el lado izquierdo o derecho de la pantalla
-para mover el bote.
+para mover el bote. La versión 1.1 añade corriente y orillas animadas, estela,
+salpicaduras, remo en movimiento y efecto visual al chocar.
 
 ## APK
 
