@@ -4,12 +4,41 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# Solo lectura: este workflow ejecuta código del pull request y no usa secretos.
+permissions:
+  contents: read
+
+concurrency:
+  group: build-apk-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
+  test:
+    name: Test visual
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Ejecutar test visual
+        run: node tests/visual-smoke.cjs
+
+  build:
+    name: Compilar APK
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -21,6 +50,6 @@ jobs:
         run: gradle assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: Rio-Aventura-APK
+          name: ${{ github.event_name == 'pull_request' && format('Rio-Aventura-APK-PR-{0}', github.event.pull_request.number) || 'Rio-Aventura-APK' }}
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
