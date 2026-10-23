@@ -29,6 +29,15 @@ estimada sin reemplazar el récord de puntos existente. La calidad visual se pue
 reducir para usar menos partículas, árboles y reflejos. Google Play Games y el
 guardado en la nube siguen pendientes de la configuración real de Play Console.
 
+La versión 1.7 cuenta una esquiva solo cuando el obstáculo ya pasó sin tocar la
+lancha. Los puntos anteriores de la versión 1.6 se conservan como estimación
+separada: no es posible recalcular jugadas pasadas. Los viajes y la distancia
+siguen registrándose al terminar una partida. En Ajustes se puede generar un
+código de respaldo manual y restaurarlo; guarda ese texto fuera del teléfono
+antes de desinstalar o borrar datos. Al restaurar se conserva el mayor récord y
+el mayor total de cada estadística, sin sumar dos veces una misma copia. El
+respaldo no es una cuenta ni un guardado en la nube.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
