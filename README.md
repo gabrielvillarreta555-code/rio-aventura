@@ -38,6 +38,13 @@ antes de desinstalar o borrar datos. Al restaurar se conserva el mayor récord y
 el mayor total de cada estadística, sin sumar dos veces una misma copia. El
 respaldo no es una cuenta ni un guardado en la nube.
 
+La versión 1.8 ordena la lancha y los obstáculos por profundidad sin copiar ni
+ordenar el arreglo en cada fotograma. Reutiliza el degradado del agua hasta que
+cambie el tamaño de la pantalla. La calidad reducida dibuja como máximo unos
+30 fotogramas por segundo, pero la física sigue actualizándose con cada ciclo.
+En Ajustes se muestra el último FPS dibujado durante el juego para comparar
+los modos; es una medición orientativa, no una garantía de rendimiento.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
