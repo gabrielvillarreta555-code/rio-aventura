@@ -32,7 +32,7 @@
         'Mi socio de confianza. Lo que pida la aldea, tú lo llevas.'],
       chat: ['Pesco desde antes de que existieran los muelles. Ahora tengo mejores redes y peor espalda.',
         'En el manglar las raíces se mueven con la marea. Ve con cuidado si llevas a alguien a bordo.',
-        'Si ves monedas flotando, son de los turistas que se mareaban. Quédatelas.'],
+        'En la bahía y en el lago del norte hay caladeros: para la lancha dentro del círculo, lanza la caña y tráeme lo que pesques. Yo te lo compro todo.'],
       none: 'Por hoy está todo repartido. Vuelve cuando el mar nos traiga trabajo.' },
     { id: 'manglar', name: 'Abuela Raíz', role: 'Herbolaria del manglar', icon: '👵',
       look: { skin: '#c98a62', shirt: '#4f9a5a', hat: 'hood', hatColor: '#2f6a46', prop: 'herbs' },

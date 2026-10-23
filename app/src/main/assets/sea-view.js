@@ -125,6 +125,9 @@
         markSprite(1);
         markSprite(2);
       }
+      fishShadow();
+      bobber();
+      for (const zone of world.fishing) labelFor({ id: `z-${zone.id}`, name: zone.name, sub: '🎣 Para la lancha y pesca aquí' });
     }
 
     // ---------- Trozos de tierra ----------
@@ -539,6 +542,44 @@
       return (markSprites[kind] = item);
     }
 
+
+    function paintFishShadow(g) {
+      g.fillStyle = 'rgba(8,60,80,0.42)';
+      g.beginPath(); g.ellipse(0, 0, 13, 5.5, 0, 0, TAU); g.fill();
+      g.beginPath(); g.moveTo(-10, 0); g.lineTo(-20, -6); g.lineTo(-20, 6); g.closePath(); g.fill();
+    }
+
+    function paintBobber(g) {
+      g.fillStyle = 'rgba(0,50,70,0.3)';
+      g.beginPath(); g.ellipse(0, 2, 9, 4, 0, 0, TAU); g.fill();
+      g.fillStyle = '#f4f4ee';
+      g.beginPath(); g.arc(0, -4, 8, 0, TAU); g.fill();
+      g.fillStyle = '#e0403a';
+      g.beginPath(); g.arc(0, -4, 8, Math.PI, 0); g.fill();
+      g.fillStyle = '#e0403a';
+      g.fillRect(-1.2, -20, 2.4, 9);
+      g.strokeStyle = 'rgba(30,40,50,0.8)';
+      g.lineWidth = 1.4;
+      g.beginPath(); g.arc(0, -4, 8, 0, TAU); g.stroke();
+    }
+
+    const fishSprite = { canvas: null };
+    function simpleSprite(cache, key, w, h, ox, oy, paint) {
+      if (cache[key]) return cache[key];
+      const element = makeCanvas(w * 2, h * 2);
+      const item = { canvas: element, w, h, ox, oy, paint };
+      if (element) {
+        const g = element.getContext('2d');
+        g.scale(2, 2);
+        g.translate(ox, oy);
+        paint(g);
+      }
+      return (cache[key] = item);
+    }
+    const miscSprites = Object.create(null);
+    const fishShadow = () => simpleSprite(miscSprites, 'fish', 44, 20, 26, 10, paintFishShadow);
+    const bobber = () => simpleSprite(miscSprites, 'bobber', 24, 34, 12, 26, paintBobber);
+
     // ---------- Objetos ordenados por profundidad ----------
     const items = [];
     function pushItem(y, kind, ref, extra) {
@@ -614,6 +655,22 @@
       const lean = b.turn * 0.12 + Math.sin(time * 3) * 0.02;
       blitRotated(art.hullSprite(f.boatStyle), x, y, sc, sc, b.heading + lean, 1);
       blitRotated(art.sprite('rider'), x, y, sc, sc, b.heading + lean, 1);
+      if (f.fishPhase) {
+        // Boya por delante de la proa: flota y, cuando pica, salta y salpica.
+        const fx = x + Math.sin(b.heading) * 78;
+        const fy = y - Math.cos(b.heading) * 78;
+        const bite = f.fishPhase === 2;
+        const dip = bite ? Math.sin(time * 30) * 4 : Math.sin(time * 2.5) * 1.5;
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.moveTo(x + Math.sin(b.heading) * 22, y - Math.cos(b.heading) * 22); ctx.lineTo(fx, fy - 4); ctx.stroke();
+        const ring = bite ? (time * 3) % 1 : (time * 0.8) % 1;
+        ctx.globalAlpha = (1 - ring) * 0.8;
+        ctx.beginPath(); ctx.ellipse(fx, fy + 2, 8 + ring * (bite ? 26 : 14), 3 + ring * (bite ? 10 : 6), 0, 0, TAU); ctx.stroke();
+        ctx.globalAlpha = 1;
+        blit(bobber(), fx, fy + dip, bite ? 1.25 : 1, bite ? 1.25 : 1, 1);
+        if (bite) blit(markSprite(1), fx, fy - 40 + Math.sin(time * 14) * 3, 1.6, 1.6, 1);
+      }
       if (f.shield) {
         ctx.globalCompositeOperation = 'lighter';
         blit(art.sprite('shield'), x, y, 0.5, 0.5, 0.8);
@@ -703,6 +760,28 @@
         ctx.stroke();
         ctx.setLineDash([]);
         pushItem(dock.pier.y + dock.pier.h, 3, dock);
+      }
+      // Caladeros: anillo azul con peces que nadan en círculo (solo los que se ven).
+      for (const zone of world.fishing) {
+        const zx = zone.x - cam.x;
+        const zy = zone.y - cam.y;
+        if (zx < -130 || zx > WIDTH + 130 || zy < -130 || zy > height + 130) continue;
+        const pulse = 0.5 + 0.5 * Math.sin(time * 2.4);
+        ctx.strokeStyle = `rgba(150,235,255,${0.65 + 0.3 * pulse})`;
+        ctx.lineWidth = 3.5;
+        ctx.setLineDash([6, 8]);
+        ctx.beginPath();
+        ctx.ellipse(zx, zy, zone.radius, zone.radius * 0.76, 0, 0, TAU);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const shadow = fishShadow();
+        const count = detail === 0 ? 2 : 4;
+        for (let i = 0; i < count; i++) {
+          const a = time * (0.6 + i * 0.07) + i * TAU / count;
+          const rx = zone.radius * (0.45 + 0.12 * (i % 2));
+          blitRotated(shadow, zx + Math.cos(a) * rx, zy + Math.sin(a) * rx * 0.76, 1, 1, a + Math.PI / 2 + Math.PI, 1);
+        }
+        blit(labelFor({ id: `z-${zone.id}`, name: zone.name, sub: '🎣 Para la lancha y pesca aquí' }), zx, zy - zone.radius * 0.76 - 8, 1, 1, 1);
       }
       // Objetos por profundidad.
       for (let cy = Math.max(0, r.cy0 - 1); cy <= Math.min(chunksPerSide - 1, r.cy1 + 1); cy++) {
@@ -798,6 +877,9 @@
         mctx.fillStyle = f.dockMark && f.dockMark[dock.id] === 2 ? '#3ed17a' : status === 'locked' ? '#9aa6a8' : status === 'visited' ? '#ffffff' : '#ffd36a';
         mctx.beginPath(); mctx.arc(dock.x * k, dock.y * k, dock.kind === 'port' ? 3.4 : 2.8, 0, TAU); mctx.fill();
       }
+      mctx.strokeStyle = '#7fe3ff';
+      mctx.lineWidth = 1.5;
+      for (const zone of world.fishing) { mctx.beginPath(); mctx.arc(zone.x * k, zone.y * k, 4.2, 0, TAU); mctx.stroke(); }
       mctx.strokeStyle = 'rgba(255,255,255,0.75)';
       mctx.lineWidth = 1;
       mctx.strokeRect(f.cam.x * k, f.cam.y * k, WIDTH * k, height * k);
