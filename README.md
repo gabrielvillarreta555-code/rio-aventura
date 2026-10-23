@@ -168,6 +168,60 @@ el nivel mínimo (hasta 30 FPS). En una prueba de laboratorio con un navegador s
 GPU, la calidad alta iguala a la de 2.3.1 (60 FPS) y la reducida es más rápida;
 no se ha medido en un teléfono físico. Ajustes muestra el nivel gráfico actual.
 
+## Río Aventura 2.5: un mundo explorable
+
+La versión 2.5 convierte el juego en una aventura de exploración sin quitar nada de
+lo anterior: gráficos 2.5D, monedas, garaje, rangos, misiones, logros y la
+navegación libre siguen igual. Desde el título (y al terminar cualquier viaje)
+el botón **Abrir el mapa** muestra un archipiélago tropical 2.5D con el **Puerto
+Palmar** y cinco destinos. Se toca un lugar para ver su descripción, distancia,
+duración estimada, dificultad y premio; **Zarpar** inicia el viaje y **Navegación
+libre** sale a navegar como siempre.
+
+| Destino | Distancia | Dificultad | Premio de primera visita | Se abre al… |
+| --- | --- | --- | --- | --- |
+| Aldea Coral | 1200 m | ★ | 20 🪙 | estar abierta desde el principio |
+| Manglar Sombrío | 1800 m | ★★ | 35 🪙 | descubrir la Aldea Coral |
+| Cascada Brumosa | 2600 m | ★★★ | 40 🪙 | descubrir la Aldea Coral |
+| Ruinas del Sol | 3200 m | ★★★★ | 60 🪙 | descubrir el Manglar y la Cascada |
+| Laguna de las Luciérnagas | 4200 m | ★★★★★ | 100 🪙 | descubrir las Ruinas y tener el rango Navegante |
+
+Cada ruta usa el mismo motor, controles y física que la navegación libre, pero con
+su propia dificultad (velocidad de la corriente, frecuencia de obstáculos, reparto
+de rocas y troncos a la deriva, monedas), tres tramos con nombre y una meta: el
+HUD muestra «Hacia <destino> · tramo/3» y los metros que faltan. Los últimos metros
+antes de llegar no tienen obstáculos nuevos y el hito del destino aparece al fondo
+del río. Al llegar sale una tarjeta de descubrimiento con el premio y las rutas
+nuevas; el premio de primera visita se cobra **una sola vez** por destino, y
+repetir una ruta solo paga el viaje normal. Cada ruta tiene su identidad visual
+(`art-themes.js`): la aldea con casas y farolillos, el manglar con raíces y
+luciérnagas verdes, la cascada con niebla y una pared de agua, las ruinas con
+columnas y polvo dorado y la laguna con cristales violetas y luciérnagas.
+Ajustes incluye el **Pasaporte del río** y los logros «Primer destino» y
+«Cartógrafo». El botón «atrás» de Android cierra el mapa o los ajustes y pausa un
+viaje en marcha; el mapa solo se abre entre viajes.
+
+Arquitectura: `world.js` contiene solo datos y reglas puras (destinos, requisitos,
+rutas y su dificultad); `map.js` dibuja el mapa en su propio lienzo con la capa fija
+en caché; `art-themes.js` añade un tema por ruta a `art.js`; `game.js` aplica las
+reglas. Lo descubierto se guarda en el mismo historial de monedas (eventos
+`discover`, idempotentes y únicos por destino), de modo que comparte la protección
+contra duplicados, la compactación y las copias manuales de 2.3/2.4. El progreso
+de 2.4 se conserva tal cual; el historial pasa a formato 3 solo cuando se
+descubre el primer destino, y una versión antigua de la app lo rechaza sin
+borrarlo en lugar de corromperlo. Las copias manuales con destinos usan el
+formato `rio-aventura-progress-v4`. Las rutas abiertas no se guardan: se calculan
+a partir de lo descubierto y los rangos. Un viaje interrumpido por una ruta se
+retoma en la misma ruta y no cuenta como llegada hasta que se llega de verdad.
+
+Pruebas: `node tests/visual-smoke.cjs` ejecuta todas las suites (incluidas
+`world.cjs`, `exploration.cjs`, `map-ui.cjs` y `themes.cjs`: reglas de desbloqueo,
+llegada, descubrimiento único, migración de 2.4, compactación, copias, interfaz del
+mapa y presupuesto de dibujo de cada tema). `node tests/e2e-world.cjs [carpeta]`
+recorre el flujo completo en Chromium (necesita Playwright; opcional) y guarda
+capturas. Capturas de esta versión en `docs/world-2.5/`. Las pruebas de rendimiento
+se hicieron en un navegador sin GPU; no se ha probado en un teléfono físico.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta

@@ -847,11 +847,8 @@
     if (arrived) {
       const place = activeRoute.destination;
       const arrival = result.arrival;
-      const discovery = arrival && arrival.first ? ` ¡Lugar descubierto! +${arrival.reward} monedas de primera visita.` : '';
-      const opened = arrival && arrival.opened.length
-        ? ` Nuevas rutas abiertas: ${arrival.opened.map(id => world.nodeById(id).name).join(', ')}.` : '';
       showOverlay(`¡Llegaste a<br>${place}!`,
-        `Lograste ${score} puntos y ${coinMessage}.${discovery}${opened} Tu récord es ${result.best}.${rankMessage}${dailyMessage}${achievementMessage}${warning}`,
+        `Lograste ${score} puntos y ${coinMessage}. Tu récord es ${result.best}.${rankMessage}${dailyMessage}${achievementMessage}${warning}`,
         'Navegar otra vez');
       if (arrival && arrival.first) {
         document.getElementById('arrivalTitle').textContent = `🗺️ ¡${place} descubierto!`;

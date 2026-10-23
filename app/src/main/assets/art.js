@@ -1381,7 +1381,7 @@
     function drawLandmark(scene) {
       if (!theme || !theme.landmark || scene.remaining < 0 || scene.remaining >= LANDMARK_RANGE) return;
       const t = 1 - scene.remaining / LANDMARK_RANGE;
-      const y = -10 + t * height * 0.27;
+      const y = -10 + t * height * 0.36;
       const k = (0.5 + 0.5 * t) * depthAt(y) / 0.7;
       putFlat(S(theme.landmark), projectX(WIDTH / 2, y), y, k, k, Math.min(1, t * 3));
     }

@@ -107,6 +107,8 @@
     #mapArea { position: absolute; z-index: 1; left: 14px; right: 14px; top: calc(max(12px, env(safe-area-inset-top)) + 80px); bottom: calc(256px + max(8px, env(safe-area-inset-bottom))); }
     .mapNode { position: absolute; left: calc(var(--x) * 100%); top: calc(var(--y) * 100%); width: 64px; height: 64px; margin: -32px 0 0 -32px; border: 0; border-radius: 50%; background: transparent; color: white; font-size: 26px; text-shadow: 0 2px 6px rgba(0,36,48,.8); cursor: pointer; -webkit-tap-highlight-color: transparent; }
     .mapNode span { display: block; margin-top: -6px; transform: translateY(-14px); }
+    .mapNode::after { content: attr(data-label); position: absolute; left: 50%; top: 100%; transform: translate(-50%, 6px); padding: 1px 8px; border-radius: 9px; background: rgba(6,50,66,.72); font: 700 11px system-ui, sans-serif; white-space: nowrap; pointer-events: none; }
+    .mapNode.locked::after { opacity: .7; }
     .mapNode.locked span { filter: grayscale(1); opacity: .75; }
     .mapNode:focus-visible { outline: 3px solid #ffe58a; outline-offset: -4px; }
     #mapHint { position: absolute; z-index: 3; left: 14px; right: 14px; top: calc(max(12px, env(safe-area-inset-top)) + 80px); padding: 12px 14px; border-radius: 14px; background: #183e4aee; border: 1px solid #ffe59a; color: #fff4c1; text-align: center; font-weight: 700; font-size: 14px; }
@@ -132,19 +134,19 @@
     <div id="stageHud" aria-live="off"><div id="stageHudText"><span id="stageLabel">Tramo 1 · Orillas tranquilas</span><span id="stageDistance">0 / 100 m</span></div><div id="stageTrack"><div id="stageProgress"></div></div></div>
     <div id="stageToast" class="hidden" role="status" aria-live="polite"></div>
     <div id="coinHud">🪙 0</div>
-    <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><p id="message">Esquiva las rocas, recoge monedas flotantes y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="play" type="button">¡Jugar!</button><div id="arrivalCard" class="hidden" role="status" aria-live="polite"><strong id="arrivalTitle"></strong><span id="arrivalText"></span></div><button id="openMap" type="button">🗺️ Abrir el mapa</button><button id="finishTrip" type="button" class="hidden">Cobrar y empezar de nuevo</button><button id="openingSettings" type="button">Ajustes</button></div>
+    <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><div id="arrivalCard" class="hidden" role="status" aria-live="polite"><strong id="arrivalTitle"></strong><span id="arrivalText"></span></div><p id="message">Esquiva las rocas, recoge monedas flotantes y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="play" type="button">¡Jugar!</button><button id="openMap" type="button">🗺️ Abrir el mapa</button><button id="finishTrip" type="button" class="hidden">Cobrar y empezar de nuevo</button><button id="openingSettings" type="button">Ajustes</button></div>
     <div id="rankToast" class="hidden" role="status" aria-live="polite" aria-atomic="true"></div>
     <section id="mapPanel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mapTitle">
       <canvas id="mapCanvas" width="450" height="800" aria-hidden="true"></canvas>
       <div id="mapTop"><button id="closeMap" type="button" aria-label="Volver">‹ Volver</button><h2 id="mapTitle">Mapa del río</h2><span id="mapCoins">🪙 0</span></div>
       <div id="mapProgress">Destinos descubiertos 0/5</div>
       <div id="mapArea">
-        <button id="node-puerto" class="mapNode" type="button" style="--x:.5;--y:.86" aria-label="Puerto Palmar"><span>⚓</span></button>
-        <button id="node-aldea" class="mapNode" type="button" style="--x:.76;--y:.69" aria-label="Aldea Coral"><span>🏘️</span></button>
-        <button id="node-manglar" class="mapNode" type="button" style="--x:.23;--y:.58" aria-label="Manglar Sombrío"><span>🌿</span></button>
-        <button id="node-cascada" class="mapNode" type="button" style="--x:.77;--y:.45" aria-label="Cascada Brumosa"><span>🌊</span></button>
-        <button id="node-ruinas" class="mapNode" type="button" style="--x:.4;--y:.32" aria-label="Ruinas del Sol"><span>🏛️</span></button>
-        <button id="node-laguna" class="mapNode" type="button" style="--x:.64;--y:.14" aria-label="Laguna de las Luciérnagas"><span>✨</span></button>
+        <button id="node-puerto" class="mapNode" data-label="Puerto" type="button" style="--x:.5;--y:.86" aria-label="Puerto Palmar"><span>⚓</span></button>
+        <button id="node-aldea" class="mapNode" data-label="Aldea" type="button" style="--x:.76;--y:.69" aria-label="Aldea Coral"><span>🏘️</span></button>
+        <button id="node-manglar" class="mapNode" data-label="Manglar" type="button" style="--x:.23;--y:.58" aria-label="Manglar Sombrío"><span>🌿</span></button>
+        <button id="node-cascada" class="mapNode" data-label="Cascada" type="button" style="--x:.77;--y:.45" aria-label="Cascada Brumosa"><span>🌊</span></button>
+        <button id="node-ruinas" class="mapNode" data-label="Ruinas" type="button" style="--x:.4;--y:.32" aria-label="Ruinas del Sol"><span>🏛️</span></button>
+        <button id="node-laguna" class="mapNode" data-label="Laguna" type="button" style="--x:.64;--y:.14" aria-label="Laguna de las Luciérnagas"><span>✨</span></button>
       </div>
       <div id="mapHint" class="hidden" role="status">Toca un destino para ver su ruta. Descubre lugares nuevos para abrir más caminos.</div>
       <div id="mapInfo">

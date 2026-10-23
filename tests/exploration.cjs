@@ -70,9 +70,10 @@ test('llegar al destino termina el viaje, descubre el lugar y paga una sola vez'
   assert.equal(run.distance, 1200);
   assert.equal(runs(store)[0].amount, 34, '1200 m dan 34 monedas de viaje');
   assert.equal(store.json(keys.economy).version, 3, 'al descubrir algo el historial pasa al formato 3');
-  const message = game.text('message');
-  assert(message.includes('Lugar descubierto') && message.includes('+20'), 'el mensaje anuncia la primera visita');
-  assert(message.includes('Manglar Sombrío') && message.includes('Cascada Brumosa'), 'el mensaje anuncia las rutas que se abren');
+  assert(!game.hidden('arrivalCard'), 'la tarjeta anuncia el descubrimiento');
+  const announce = `${game.text('arrivalTitle')} ${game.text('arrivalText')}`;
+  assert(announce.includes('descubierto') && announce.includes('+20'), 'la tarjeta anuncia la primera visita');
+  assert(announce.includes('Manglar Sombrío') && announce.includes('Cascada Brumosa'), 'la tarjeta anuncia las rutas que se abren');
   assert(game.html('title').includes('Aldea Coral'));
   assert.equal(game.text('play'), 'Navegar otra vez');
   assert(!store.data.has(keys.trip) && !store.data.has(keys.settle), 'el viaje terminado no deja restos');
@@ -93,7 +94,7 @@ test('repetir una ruta no repite la recompensa de primera visita', () => {
   assert.equal(discoveries(store).length, 1, 'sigue habiendo un único descubrimiento');
   assert.equal(runs(store).length, 2);
   assert(game.wallet() > coinsAfterFirst, 'el viaje repetido paga sus monedas normales');
-  assert(!game.text('message').includes('Lugar descubierto'));
+  assert(game.hidden('arrivalCard'), 'repetir no vuelve a anunciar el descubrimiento');
   assert.equal(game.api().view().arrivals.get('aldea'), 2, 'se cuentan las llegadas');
   assert(!/pendientes/.test(game.text('message')));
 });
