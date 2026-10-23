@@ -28,6 +28,9 @@
   const importProgressButton = document.getElementById('importProgress');
   const backupNotice = document.getElementById('backupNotice');
   const performanceInfo = document.getElementById('performanceInfo');
+  const coinHud = document.getElementById('coinHud');
+  const garageCoins = document.getElementById('garageCoins');
+  const garageNotice = document.getElementById('garageNotice');
   const width = canvas.width;
   let height = canvas.height;
   const bestKey = 'rio-aventura-best-v1';
@@ -35,7 +38,14 @@
   const legacyStatsKey = 'rio-aventura-stats-v1';
   const statsKey = 'rio-aventura-stats-v2';
   const backupFormat = 'rio-aventura-progress-v1';
+  const economyKey = 'rio-aventura-economy-v1';
+  const economyBackupFormat = 'rio-aventura-progress-v2';
   const avatars = ['🚤', '🧒', '🐬', '🌊'];
+  const boats = [
+    { id: 'classic', name: 'Clásica', price: 0, hull: ['#d19451', '#7c452b', '#4c2b23'], trim: '#e1aa65' },
+    { id: 'coral', name: 'Coral', price: 15, hull: ['#ffad78', '#df675d', '#8b3b50'], trim: '#ffd8a0' },
+    { id: 'storm', name: 'Tormenta', price: 45, hull: ['#9fd8e9', '#447aab', '#263c70'], trim: '#c8f4f4' }
+  ];
   const stages = [
     { start: 0, name: 'Orillas tranquilas', water: ['#18566c', '#2a9caa', '#64c8c2'], driftChance: 0 },
     { start: 100, name: 'Troncos a la deriva', water: ['#145466', '#238c9d', '#4db6ae'], driftChance: 0.32 },
@@ -44,6 +54,8 @@
   ];
   const profile = readProfile();
   const stats = readStats();
+  let economyError = false;
+  const economy = readEconomy();
   let state = 'ready';
   let boat, obstacles, particles, score, lives, elapsed, spawnIn, immunity, shieldTimer, direction, riverSpeed;
   let runDistance = 0;
@@ -85,6 +97,88 @@
     return Number.isFinite(number) ? Math.max(0, Math.min(100000000, Math.floor(number))) : 0;
   }
 
+  function freshEconomy() {
+    return { version: 1, deviceId: `d${Date.now().toString(36)}${Math.floor(Math.random() * 1000000000).toString(36)}`,
+      nextEvent: 1, events: [], selected: 'classic' };
+  }
+
+  function replayEconomy(events) {
+    const owned = new Set(['classic']);
+    const seen = new Set();
+    let coins = 0;
+    for (const event of events) {
+      if (!event || typeof event.id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(event.id) || seen.has(event.id)) return null;
+      seen.add(event.id);
+      if (event.type === 'earn' && Number.isInteger(event.amount) && event.amount >= 1 && event.amount <= 80) {
+        coins += event.amount;
+        if (coins > 100000000) return null;
+      } else if (event.type === 'buy') {
+        const boatOption = boats.find(item => item.id === event.boat);
+        if (!boatOption || boatOption.price === 0 || event.amount !== boatOption.price ||
+            owned.has(event.boat) || coins < boatOption.price) return null;
+        coins -= boatOption.price;
+        owned.add(event.boat);
+      } else return null;
+    }
+    return { coins, owned };
+  }
+
+  function validateEconomy(value) {
+    if (!value || value.version !== 1 || typeof value.deviceId !== 'string' ||
+        !/^[a-zA-Z0-9_-]{1,64}$/.test(value.deviceId) ||
+        !Number.isInteger(value.nextEvent) || value.nextEvent < 1 ||
+        !Array.isArray(value.events) || value.events.length > 10000) return null;
+    const view = replayEconomy(value.events);
+    if (!view || !view.owned.has(value.selected)) return null;
+    return { version: 1, deviceId: value.deviceId, nextEvent: value.nextEvent,
+      events: value.events, selected: value.selected };
+  }
+
+  function readEconomy() {
+    let saved;
+    try {
+      const text = localStorage.getItem(economyKey);
+      if (text === null) return freshEconomy();
+      saved = validateEconomy(JSON.parse(text));
+    } catch (_) { /* Keep the stored value for manual recovery. */ }
+    if (saved) return saved;
+    economyError = true;
+    return freshEconomy();
+  }
+
+  function saveEconomy(next, allowRecovery = false) {
+    if ((economyError && !allowRecovery) || !validateEconomy(next) || !saveObject(economyKey, next)) return false;
+    Object.assign(economy, next);
+    economyError = false;
+    updateCoinHud();
+    return true;
+  }
+
+  function economyWithEvent(event) {
+    let sequence = economy.nextEvent;
+    let id = `${economy.deviceId}-${sequence}`;
+    while (economy.events.some(item => item.id === id)) id = `${economy.deviceId}-${++sequence}`;
+    return { ...economy, nextEvent: sequence + 1,
+      events: [...economy.events, { id, ...event }] };
+  }
+
+  function updateCoinHud() {
+    coinHud.textContent = `🪙 ${replayEconomy(economy.events).coins}`;
+  }
+
+  function updateGarageView() {
+    const { coins, owned } = replayEconomy(economy.events);
+    garageCoins.textContent = `${coins} monedas`;
+    for (const boatOption of boats) {
+      const button = document.getElementById(`boat-${boatOption.id}`);
+      button.textContent = owned.has(boatOption.id)
+        ? economy.selected === boatOption.id ? 'Equipada' : 'Elegir'
+        : `Comprar · ${boatOption.price} 🪙`;
+      button.disabled = economy.selected === boatOption.id || economyError;
+    }
+    if (economyError) garageNotice.textContent = 'No se pudo leer el progreso de monedas. Restaura una copia antes de comprar.';
+  }
+
   function readProfile() {
     const saved = readObject(profileKey);
     const name = typeof saved.name === 'string' ? saved.name.trim().slice(0, 18) : '';
@@ -118,18 +212,19 @@
 
   function exportBackup() {
     return JSON.stringify({
-      format: backupFormat,
+      format: economyBackupFormat,
       profile: { ...profile },
       best: readBest(),
-      stats: { ...stats }
+      stats: { ...stats },
+      economy: { ...economy }
     });
   }
 
   function parseBackup(text) {
-    if (text.length > 2048) return null;
+    if (text.length > 1000000) return null;
     let backup;
     try { backup = JSON.parse(text); } catch (_) { return null; }
-    if (!backup || backup.format !== backupFormat || !backup.profile || !backup.stats) return null;
+    if (!backup || ![backupFormat, economyBackupFormat].includes(backup.format) || !backup.profile || !backup.stats) return null;
     const { name, avatar, quality } = backup.profile;
     if (typeof name !== 'string' || !name.trim() || name.length > 18 ||
         !Number.isInteger(avatar) || avatar < 0 || avatar >= avatars.length ||
@@ -137,6 +232,7 @@
     const values = [backup.best, backup.stats.runs, backup.stats.dodged,
       backup.stats.distance, backup.stats.legacyDodged];
     if (!values.every(value => Number.isInteger(value) && value >= 0 && value <= 100000000)) return null;
+    if (backup.format === economyBackupFormat && !validateEconomy(backup.economy)) return null;
     return backup;
   }
 
@@ -152,6 +248,7 @@
     performanceInfo.textContent = measuredFps === null
       ? 'FPS: juega unos segundos para medirlos.'
       : `Última medición: ${measuredFps} FPS dibujados.`;
+    updateGarageView();
   }
 
   function updateProfileBadge() {
@@ -255,8 +352,10 @@
     stats.dodged = Math.min(100000000, stats.dodged + score);
     stats.distance = Math.min(100000000, stats.distance + Math.round(runDistance));
     const savedStats = saveStats();
+    const earned = Math.max(1, Math.min(80, Math.floor(runDistance / 35) + score * 2));
+    const savedCoins = saveEconomy(economyWithEvent({ type: 'earn', amount: earned }));
     showOverlay('¡Fin del<br>viaje!',
-      `Lograste ${score} puntos. Tu récord es ${best}.${savedBest && savedStats ? '' : ' No se pudo guardar todo el progreso.'}`,
+      `Lograste ${score} puntos y ${savedCoins ? earned : 0} monedas. Tu récord es ${best}.${savedBest && savedStats && savedCoins ? '' : ' No se pudo guardar todo el progreso.'}`,
       'Jugar otra vez');
   }
 
@@ -603,9 +702,10 @@
     ctx.ellipse(0, 30, 48, 17, 0, 0, Math.PI * 2);
     ctx.fill();
     const hull = ctx.createLinearGradient(-42, -18, 42, 34);
-    hull.addColorStop(0, '#d19451');
-    hull.addColorStop(0.48, '#7c452b');
-    hull.addColorStop(1, '#4c2b23');
+    const selectedBoat = boats.find(item => item.id === economy.selected) || boats[0];
+    hull.addColorStop(0, selectedBoat.hull[0]);
+    hull.addColorStop(0.48, selectedBoat.hull[1]);
+    hull.addColorStop(1, selectedBoat.hull[2]);
     ctx.fillStyle = hull;
     ctx.beginPath();
     ctx.moveTo(0, -45);
@@ -615,7 +715,7 @@
     ctx.quadraticCurveTo(-45, -20, 0, -45);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = '#e1aa65';
+    ctx.strokeStyle = selectedBoat.trim;
     ctx.lineWidth = 4;
     ctx.stroke();
     ctx.fillStyle = '#9b6037';
@@ -775,6 +875,25 @@
     profile.quality = qualitySelect.value === 'low' ? 'low' : 'high';
     profileNotice.textContent = saveObject(profileKey, profile) ? 'Calidad guardada.' : 'No se pudo guardar en este teléfono.';
   });
+  for (const boatOption of boats) {
+    document.getElementById(`boat-${boatOption.id}`).addEventListener('click', () => {
+      if (economyError) { updateGarageView(); return; }
+      const view = replayEconomy(economy.events);
+      if (view.owned.has(boatOption.id)) {
+        if (economy.selected === boatOption.id) return;
+        garageNotice.textContent = saveEconomy({ ...economy, selected: boatOption.id })
+          ? `${boatOption.name} equipada.` : 'No se pudo guardar la lancha elegida.';
+      } else if (view.coins < boatOption.price) {
+        garageNotice.textContent = `Faltan ${boatOption.price - view.coins} monedas para ${boatOption.name}.`;
+      } else {
+        const next = economyWithEvent({ type: 'buy', boat: boatOption.id, amount: boatOption.price });
+        next.selected = boatOption.id;
+        garageNotice.textContent = saveEconomy(next)
+          ? `${boatOption.name} comprada y equipada.` : 'No se pudo guardar la compra; no se descontaron monedas.';
+      }
+      updateGarageView();
+    });
+  }
   exportProgressButton.addEventListener('click', () => {
     backupText.value = exportBackup();
     backupText.select();
@@ -785,6 +904,25 @@
     if (!backup) {
       backupNotice.textContent = 'La copia no es válida. No se cambió el progreso.';
       return;
+    }
+    let nextEconomy = null;
+    if (backup.format === economyBackupFormat) {
+      const localIds = new Set(economy.events.map(event => event.id));
+      const importedIds = new Set(backup.economy.events.map(event => event.id));
+      const localEvents = new Map(economy.events.map(event => [event.id, event]));
+      const conflictingEvent = backup.economy.events.some(event =>
+        localEvents.has(event.id) && JSON.stringify(localEvents.get(event.id)) !== JSON.stringify(event));
+      const localContained = economy.events.every(event => importedIds.has(event.id));
+      const importedContained = backup.economy.events.every(event => localIds.has(event.id));
+      if ((conflictingEvent || (!localContained && !importedContained)) && !economyError) {
+        backupNotice.textContent = 'Las monedas de esta copia y del teléfono son distintas. No se mezclaron para evitar duplicaciones.';
+        return;
+      }
+      nextEconomy = localContained || economyError ? backup.economy : economy;
+      if (!saveEconomy(nextEconomy, true)) {
+        backupNotice.textContent = 'No se pudieron guardar las monedas. No se cambió el resto del progreso.';
+        return;
+      }
     }
     const nextProfile = { ...backup.profile, name: backup.profile.name.trim() };
     const nextStats = {
@@ -803,7 +941,7 @@
     updateProfileBadge();
     updateSettingsView();
     backupNotice.textContent = profileSaved && statsSaved && bestSaved
-      ? 'Copia restaurada. Se conservaron los mayores récords y totales.'
+      ? 'Copia restaurada. Se conservaron los mayores récords y totales; las monedas no se duplicaron.'
       : 'No se pudo guardar todo. Revisa los datos antes de cerrar el juego.';
   });
 
@@ -875,5 +1013,6 @@
   window.addEventListener('resize', resizeStage);
   reset();
   updateProfileBadge();
+  updateCoinHud();
   requestAnimationFrame(frame);
 })();
