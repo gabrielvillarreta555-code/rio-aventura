@@ -19,11 +19,17 @@
   const saveProfileButton = document.getElementById('saveProfile');
   const profileNotice = document.getElementById('profileNotice');
   const qualitySelect = document.getElementById('quality');
+  const backupText = document.getElementById('backupText');
+  const exportProgressButton = document.getElementById('exportProgress');
+  const importProgressButton = document.getElementById('importProgress');
+  const backupNotice = document.getElementById('backupNotice');
   const width = canvas.width;
   let height = canvas.height;
   const bestKey = 'rio-aventura-best-v1';
   const profileKey = 'rio-aventura-profile-v1';
-  const statsKey = 'rio-aventura-stats-v1';
+  const legacyStatsKey = 'rio-aventura-stats-v1';
+  const statsKey = 'rio-aventura-stats-v2';
+  const backupFormat = 'rio-aventura-progress-v1';
   const avatars = ['🚤', '🧒', '🐬', '🌊'];
   const profile = readProfile();
   const stats = readStats();
@@ -72,11 +78,47 @@
 
   function readStats() {
     const saved = readObject(statsKey);
+    if (saved.version !== 2) {
+      const legacy = readObject(legacyStatsKey);
+      return {
+        runs: safeCount(legacy.runs), dodged: 0,
+        distance: safeCount(legacy.distance), legacyDodged: safeCount(legacy.dodged)
+      };
+    }
     return {
       runs: safeCount(saved.runs),
       dodged: safeCount(saved.dodged),
-      distance: safeCount(saved.distance)
+      distance: safeCount(saved.distance),
+      legacyDodged: safeCount(saved.legacyDodged)
     };
+  }
+
+  function saveStats() {
+    return saveObject(statsKey, { version: 2, ...stats });
+  }
+
+  function exportBackup() {
+    return JSON.stringify({
+      format: backupFormat,
+      profile: { ...profile },
+      best: readBest(),
+      stats: { ...stats }
+    });
+  }
+
+  function parseBackup(text) {
+    if (text.length > 2048) return null;
+    let backup;
+    try { backup = JSON.parse(text); } catch (_) { return null; }
+    if (!backup || backup.format !== backupFormat || !backup.profile || !backup.stats) return null;
+    const { name, avatar, quality } = backup.profile;
+    if (typeof name !== 'string' || !name.trim() || name.length > 18 ||
+        !Number.isInteger(avatar) || avatar < 0 || avatar >= avatars.length ||
+        !['high', 'low'].includes(quality)) return null;
+    const values = [backup.best, backup.stats.runs, backup.stats.dodged,
+      backup.stats.distance, backup.stats.legacyDodged];
+    if (!values.every(value => Number.isInteger(value) && value >= 0 && value <= 100000000)) return null;
+    return backup;
   }
 
   function updateSettingsView() {
@@ -86,6 +128,7 @@
     document.getElementById('bestScore').textContent = String(readBest());
     document.getElementById('totalRuns').textContent = String(stats.runs);
     document.getElementById('totalDodged').textContent = String(stats.dodged);
+    document.getElementById('legacyDodged').textContent = String(stats.legacyDodged);
     document.getElementById('totalDistance').textContent = `${stats.distance} m`;
   }
 
@@ -160,18 +203,22 @@
     activePointerId = null;
     boat.vx = 0;
     const best = Math.max(score, readBest());
-    try { localStorage.setItem(bestKey, String(best)); } catch (_) { /* Session can still finish. */ }
+    let savedBest = false;
+    try { localStorage.setItem(bestKey, String(best)); savedBest = true; }
+    catch (_) { /* Session can still finish. */ }
     stats.runs = Math.min(100000000, stats.runs + 1);
     stats.dodged = Math.min(100000000, stats.dodged + score);
     stats.distance = Math.min(100000000, stats.distance + Math.round(runDistance));
-    saveObject(statsKey, stats);
-    showOverlay('¡Fin del<br>viaje!', `Lograste ${score} puntos. Tu récord es ${best}.`, 'Jugar otra vez');
+    const savedStats = saveStats();
+    showOverlay('¡Fin del<br>viaje!',
+      `Lograste ${score} puntos. Tu récord es ${best}.${savedBest && savedStats ? '' : ' No se pudo guardar todo el progreso.'}`,
+      'Jugar otra vez');
   }
 
   function spawn() {
     const kind = Math.random() < 0.78 ? 'rock' : 'log';
     const radius = kind === 'rock' ? 19 + Math.random() * 11 : 26;
-    obstacles.push({ x: 78 + Math.random() * (width - 156), y: -40, radius, kind, counted: false, phase: Math.random() * Math.PI * 2 });
+    obstacles.push({ x: 78 + Math.random() * (width - 156), y: -40, radius, kind, counted: false, hit: false, phase: Math.random() * Math.PI * 2 });
   }
 
   function splash(x, y, count, color) {
@@ -227,13 +274,11 @@
     }
     for (const item of obstacles) {
       item.y += riverSpeed * dt;
-      if (!item.counted && item.y > boat.y + 38) {
-        item.counted = true;
-        score++;
-        updateHud();
-      }
+      const contactRadius = item.radius * depthAt(item.y) + 23 * depthAt(boat.y);
       const separation = Math.hypot(projectedX(item.x, item.y) - projectedX(boat.x, boat.y), item.y - boat.y);
-      if (immunity === 0 && separation < item.radius * depthAt(item.y) + 23 * depthAt(boat.y)) {
+      if (!item.hit && separation < contactRadius) {
+        item.hit = true;
+        if (immunity !== 0) continue;
         lives--;
         immunity = 1.4;
         impact = 1;
@@ -242,6 +287,13 @@
         splash(boat.x, boat.y, 22, '#ffffff');
         updateHud();
         if (lives === 0) { finish(); return; }
+      }
+      if (!item.counted && item.y > boat.y + contactRadius) {
+        item.counted = true;
+        if (!item.hit) {
+          score++;
+          updateHud();
+        }
       }
     }
     obstacles = obstacles.filter(item => item.y < height + 50);
@@ -572,6 +624,7 @@
       pause.textContent = '▶';
     }
     profileNotice.textContent = '';
+    backupNotice.textContent = '';
     updateSettingsView();
     settingsPanel.classList.remove('hidden');
   }
@@ -604,6 +657,37 @@
   qualitySelect.addEventListener('change', () => {
     profile.quality = qualitySelect.value === 'low' ? 'low' : 'high';
     profileNotice.textContent = saveObject(profileKey, profile) ? 'Calidad guardada.' : 'No se pudo guardar en este teléfono.';
+  });
+  exportProgressButton.addEventListener('click', () => {
+    backupText.value = exportBackup();
+    backupText.select();
+    backupNotice.textContent = 'Copia el texto seleccionado y guárdalo fuera del juego.';
+  });
+  importProgressButton.addEventListener('click', () => {
+    const backup = parseBackup(backupText.value);
+    if (!backup) {
+      backupNotice.textContent = 'La copia no es válida. No se cambió el progreso.';
+      return;
+    }
+    const nextProfile = { ...backup.profile, name: backup.profile.name.trim() };
+    const nextStats = {
+      runs: Math.max(stats.runs, backup.stats.runs),
+      dodged: Math.max(stats.dodged, backup.stats.dodged),
+      distance: Math.max(stats.distance, backup.stats.distance),
+      legacyDodged: Math.max(stats.legacyDodged, backup.stats.legacyDodged)
+    };
+    const profileSaved = saveObject(profileKey, nextProfile);
+    const statsSaved = saveObject(statsKey, { version: 2, ...nextStats });
+    let bestSaved = false;
+    try { localStorage.setItem(bestKey, String(Math.max(readBest(), backup.best))); bestSaved = true; }
+    catch (_) { /* Keep the existing record in memory. */ }
+    if (profileSaved) Object.assign(profile, nextProfile);
+    if (statsSaved) Object.assign(stats, nextStats);
+    updateProfileBadge();
+    updateSettingsView();
+    backupNotice.textContent = profileSaved && statsSaved && bestSaved
+      ? 'Copia restaurada. Se conservaron los mayores récords y totales.'
+      : 'No se pudo guardar todo. Revisa los datos antes de cerrar el juego.';
   });
 
   canvas.addEventListener('pointerdown', event => {
