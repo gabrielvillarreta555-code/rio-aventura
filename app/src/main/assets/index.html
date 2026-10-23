@@ -31,7 +31,7 @@
     .settingsCard h3 { margin: 24px 0 10px; font-size: 18px; }
     .settingsCard p { color: #c8e7e4; line-height: 1.4; }
     .settingsCard label { display: block; margin-bottom: 8px; font-weight: 700; }
-    .settingsCard input, .settingsCard select { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #b2e5df88; border-radius: 12px; background: #092d38; color: white; font: 16px system-ui, sans-serif; }
+    .settingsCard input, .settingsCard select, .settingsCard textarea { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #b2e5df88; border-radius: 12px; background: #092d38; color: white; font: 16px system-ui, sans-serif; }
     .profileRow { display: flex; align-items: end; gap: 12px; }
     .profileRow label { flex: 1; margin: 0; }
     #avatar { width: 54px; height: 46px; border: 1px solid #b2e5df88; border-radius: 12px; background: #092d38; font-size: 27px; }
@@ -43,6 +43,10 @@
     .statsGrid div { padding: 12px; border-radius: 14px; background: #0b2f3a; }
     .statsGrid strong { display: block; font-size: 21px; color: #ffdd79; }
     .statsGrid small { color: #c8e7e4; }
+    #backupText { min-height: 96px; resize: vertical; font: 13px ui-monospace, monospace; }
+    .backupActions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+    .backupActions button { min-height: 44px; padding: 10px 14px; border: 1px solid #b2e5df88; border-radius: 12px; background: #0b4b58; color: white; font: 700 14px system-ui, sans-serif; }
+    #backupNotice { min-height: 20px; margin-top: 8px; color: #c7f7db; font-size: 13px; }
     .googleNote { margin-top: 20px; padding: 12px; border: 1px solid #a5e7df44; border-radius: 14px; }
     @media (max-width: 380px) { #hud { left: 8px; right: 8px; gap: 4px; } #hud span { padding: 7px; font-size: 13px; } #hudActions { gap: 4px; } #hudActions button { width: 38px; height: 38px; } }
     #hint { position: absolute; bottom: max(24px, env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 14px; font-weight: 700; color: #efffff; text-shadow: 0 2px 8px #153a49; pointer-events: none; }
@@ -62,9 +66,14 @@
         <button id="saveProfile" type="button">Guardar perfil</button>
         <div id="profileNotice" role="status" aria-live="polite"></div>
         <h3>Estadísticas</h3>
-        <div class="statsGrid"><div><strong id="bestScore">0</strong><small>Récord de puntos</small></div><div><strong id="totalRuns">0</strong><small>Viajes terminados</small></div><div><strong id="totalDodged">0</strong><small>Obstáculos esquivados</small></div><div><strong id="totalDistance">0 m</strong><small>Distancia estimada</small></div></div>
+        <div class="statsGrid"><div><strong id="bestScore">0</strong><small>Récord de puntos</small></div><div><strong id="totalRuns">0</strong><small>Viajes terminados</small></div><div><strong id="totalDodged">0</strong><small>Esquivas confirmadas desde 1.7</small></div><div><strong id="totalDistance">0 m</strong><small>Distancia estimada en viajes terminados</small></div><div><strong id="legacyDodged">0</strong><small>Puntos anteriores estimados</small></div></div>
         <h3>Gráficos</h3>
         <label for="quality">Calidad visual</label><select id="quality"><option value="high">Alta: todos los efectos</option><option value="low">Reducida: menos partículas y reflejos</option></select>
+        <h3>Copia manual del progreso</h3>
+        <p>Guarda primero tu nombre, genera una copia y conserva el texto fuera del juego. Para restaurarla, pégalo aquí. No es un guardado en la nube.</p>
+        <label for="backupText">Código de respaldo</label><textarea id="backupText" maxlength="2048" spellcheck="false" autocapitalize="off"></textarea>
+        <div class="backupActions"><button id="exportProgress" type="button">Generar copia</button><button id="importProgress" type="button">Restaurar copia</button></div>
+        <div id="backupNotice" role="status" aria-live="polite"></div>
         <p class="googleNote">Google Play Games: pendiente de configuración. Puedes jugar como invitado sin conexión.</p>
       </div>
     </section>
