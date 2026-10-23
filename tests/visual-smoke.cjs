@@ -4,48 +4,31 @@ const vm = require('node:vm');
 
 const events = new Map();
 const operations = [];
-const translations = [];
-let fullCanvasFills = 0;
-let waterGradientCreates = 0;
-let driftDraws = 0;
+let mainGradients = 0;
 let blockEconomyWrites = false;
-const boatColors = [];
-const gradient = { addColorStop() {} };
-const context = new Proxy({
-  createLinearGradient(x0, y0, x1, y1) {
-    if (x0 === 0 && y0 === 0 && x1 === canvas.width && y1 === canvas.height) waterGradientCreates++;
-    if (x0 === -42 && y0 === -18 && x1 === 42 && y1 === 34) {
-      return { addColorStop(_position, color) { boatColors.push(color); } };
-    }
-    return gradient;
-  },
-  createRadialGradient: () => gradient,
-  fillRect(x, y, width, height) {
-    if (x === 0 && y === 0 && width === canvas.width && height === canvas.height) fullCanvasFills++;
-    operations.push('fillRect');
-  },
-  translate(x, y) {
-    assert(Number.isFinite(x) && Number.isFinite(y), 'translate received a non-finite value');
-    translations.push([x, y]);
-    operations.push('translate');
-  }
-}, {
-  get(target, key) {
-    if (key in target) return target[key];
-    return (...args) => {
-      for (const value of args) {
-        if (typeof value === 'number') assert(Number.isFinite(value), `${String(key)} received a non-finite value`);
-      }
-      operations.push(key);
-    };
-  },
-  set(target, key, value) {
-    if (key === 'fillStyle' && value === '#925b35') driftDraws++;
-    if (key === 'fillStyle' && value === '#ffdf6b' && translations.length) translations.at(-1).coin = true;
-    target[key] = value;
-    return true;
-  }
-});
+const gradientColors = [];
+// Un contexto 2D de pruebas: comprueba que ningún número dibujado sea NaN o infinito y cuenta
+// las operaciones del lienzo principal. Los sprites se pintan en lienzos ocultos como en Android.
+function makeContext(isMain) {
+  const gradient = () => ({ addColorStop(_position, color) { gradientColors.push(color); } });
+  return new Proxy({
+    createLinearGradient() { if (isMain) mainGradients++; return gradient(); },
+    createRadialGradient() { if (isMain) mainGradients++; return gradient(); },
+    createPattern: () => ({})
+  }, {
+    get(target, key) {
+      if (key in target) return target[key];
+      return (...args) => {
+        for (const value of args) {
+          if (typeof value === 'number') assert(Number.isFinite(value), `${String(key)} received a non-finite value`);
+        }
+        if (isMain) operations.push(key);
+      };
+    },
+    set(target, key, value) { target[key] = value; return true; }
+  });
+}
+const context = makeContext(true);
 const element = id => {
   const classes = new Set(id === 'settingsPanel' ? ['hidden'] : []);
   return {
@@ -86,6 +69,7 @@ const sandbox = {
       if (!elements.has(id)) elements.set(id, element(id));
       return elements.get(id);
     },
+    createElement() { return { width: 0, height: 0, getContext: () => makeContext(false) }; },
     addEventListener(name, callback) { events.set(`document:${name}`, callback); }
   },
   window: { addEventListener(name, callback) { events.set(`window:${name}`, callback); } },
@@ -104,19 +88,20 @@ const sandbox = {
 // Relanzamiento con cierre limpio: las pruebas anteriores abandonan viajes sin terminar y,
 // como un teléfono real, el juego ofrecería retomarlos. Los casos de viaje interrumpido
 // usan vm.runInNewContext directamente.
+const artSource = fs.readFileSync('app/src/main/assets/art.js', 'utf8');
 function launch(code, context) {
   storage.delete('rio-aventura-trip-v1');
-  vm.runInNewContext(code, context);
+  vm.runInNewContext(`${artSource}\n${code}`, context);
 }
 launch(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
 storage.delete('rio-aventura-stats-v1');
 assert.equal(canvas.height, 1000, 'the playfield should fit a tall phone');
+const art = () => sandbox.window.RioArt.instance;
 function boatXAt(time) {
-  translations.length = 0;
   nextFrame(time);
-  const position = translations.filter(([, y]) => y > 840 && y < 860).at(-1);
-  assert(position, 'the boat should be visible near the bottom of the screen');
-  return position[0];
+  const { boatX, boatY } = art().debug;
+  assert(boatY > 840 && boatY < 860, 'the boat should be visible near the bottom of the screen');
+  return boatX;
 }
 const startingX = boatXAt(16);
 events.get('play:click')();
@@ -132,12 +117,13 @@ events.get('game:pointerup')({ pointerId: 1 });
 const coastingX = boatXAt(192);
 assert(coastingX > heldX, 'the boat should coast briefly after touch release');
 for (let time = 208; time < 2500; time += 16) nextFrame(time);
-assert(operations.includes('scale'), 'the depth projection must draw scaled objects');
-assert(operations.includes('translate'), 'the boat and obstacles must be drawn');
-assert(operations.includes('clip'), 'the perspective river must clip water to its banks');
-assert(operations.filter(name => name === 'bezierCurveTo').length > 5, 'moving water shimmer should be drawn');
-assert(operations.filter(name => name === 'arc').length > 20, 'layered riverside trees should be drawn');
-assert.equal(waterGradientCreates, 1, 'the water gradient should be reused between frames');
+assert(operations.includes('drawImage'), 'cached sprites (boat, palms, rocks) must be copied onto the canvas');
+assert(operations.includes('rotate'), 'the boat must tilt when steering');
+assert(art().debug.spritesBuilt > 20, 'the tropical scenery should be prepared once as sprites');
+const gradientsAfterWarmup = mainGradients;
+for (let time = 2512; time < 3500; time += 16) nextFrame(time);
+assert.equal(mainGradients, gradientsAfterWarmup, 'no gradient may be created while playing in the same stage');
+assert(art().debug.drawnLast < 160, 'a frame should stay within its sprite budget');
 const html = fs.readFileSync('app/src/main/assets/index.html', 'utf8');
 for (const id of ['settings', 'openingSettings', 'settingsPanel', 'profileName', 'avatar', 'quality', 'performanceInfo', 'bestScore', 'totalRuns', 'totalDodged', 'legacyDodged', 'playerTag', 'backupText', 'exportProgress', 'importProgress', 'stageLabel', 'stageDistance', 'stageProgress', 'stageToast', 'rankToast', 'coinHud', 'garageCoins', 'boat-classic', 'boat-coral', 'boat-storm', 'boat-breeze', 'boat-aurora', 'rank-explorer', 'rank-navigator', 'rank-captain', 'rankProgressText', 'rankProgressTrack', 'rankProgressFill', 'dailyDate', 'daily-distance', 'daily-dodged', 'daily-pickups', 'achievement-first', 'achievement-regular', 'achievement-dodger', 'achievement-traveler']) {
   assert(html.includes(`id="${id}"`), `the settings screen needs ${id}`);
@@ -165,32 +151,26 @@ assert.equal(JSON.parse(storage.get('rio-aventura-profile-v1')).avatar, 1, 'avat
 elements.get('quality').value = 'low';
 events.get('quality:change')();
 assert.equal(JSON.parse(storage.get('rio-aventura-profile-v1')).quality, 'low', 'quality choice should persist');
-operations.length = 0;
-nextFrame(2512);
-nextFrame(2544);
-assert(operations.includes('fillRect'), 'reduced quality should still draw the game');
-assert(!operations.includes('bezierCurveTo'), 'reduced quality should omit water shimmer');
+const framesBeforeLow = art().debug.frames;
+nextFrame(3612);
+nextFrame(3644);
+assert(art().debug.frames > framesBeforeLow, 'reduced quality should still draw the game');
+assert.equal(art().debug.detail, 0, 'reduced quality should use the minimum detail level');
 events.get('closeSettings:click')();
 assert(elements.get('settingsPanel').classList.contains('hidden'), 'settings should close');
 assert.equal(elements.get('pause').textContent, 'Ⅱ', 'closing settings should resume play');
 events.get('game:pointerdown')({ pointerId: 3, clientX: 350 });
-for (let time = 2560; time <= 4500; time += 16) nextFrame(time);
+for (let time = 3660; time <= 5600; time += 16) nextFrame(time);
 events.get('game:pointerup')({ pointerId: 3 });
 let foregroundOrderSeen = false;
-for (let time = 4550; time <= 7000; time += 50) {
-  translations.length = 0;
+for (let time = 5650; time <= 8100; time += 50) {
   nextFrame(time);
-  const boatIndex = translations.findIndex(entry => !entry.coin && entry[0] > 315 && entry[0] < 370 && entry[1] > 840 && entry[1] < 860);
-  const obstacleIndex = translations.findIndex(entry => !entry.coin && entry[0] > 175 && entry[0] < 230 && entry[1] > 880 && entry[1] < 1000);
-  if (boatIndex >= 0 && obstacleIndex >= 0) {
-    assert(boatIndex < obstacleIndex, 'a foreground obstacle should be drawn over the boat');
-    foregroundOrderSeen = true;
-  }
+  if (art().debug.foreground > 0) foregroundOrderSeen = true;
 }
 assert(foregroundOrderSeen, 'the test should observe a foreground obstacle');
 assert(Number.parseInt(elements.get('score').textContent, 10) > 0, 'a safely passed obstacle should score');
 events.get('play:click')();
-for (let time = 7050; time < 40000 && !storage.has('rio-aventura-stats-v2'); time += 50) nextFrame(time);
+for (let time = 8150; time < 40000 && !storage.has('rio-aventura-stats-v2'); time += 50) nextFrame(time);
 const stats = JSON.parse(storage.get('rio-aventura-stats-v2') || 'null');
 assert(stats && stats.runs === 1, 'finishing a trip should save one completed run');
 assert(stats.distance > 0, 'finished trips should save distance');
@@ -278,9 +258,9 @@ elements.get('backupText').value = JSON.stringify(legacyBackup);
 events.get('importProgress:click')();
 assert.equal(Number.parseInt(elements.get('garageCoins').textContent, 10), coinsAfterPurchase, 'old backups must not change the wallet');
 events.get('closeSettings:click')();
-boatColors.length = 0;
+gradientColors.length = 0;
 for (let time = 40500; time < 40600; time += 16) nextFrame(time);
-assert(boatColors.includes('#447aab'), 'the selected boat should change the rendered hull color');
+assert.equal(art().debug.hull, 'storm', 'the selected boat should change the rendered hull color');
 storage.set('rio-aventura-stats-v1', JSON.stringify({ runs: 5, dodged: 17, distance: 520 }));
 storage.delete('rio-aventura-stats-v2');
 launch(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
@@ -294,30 +274,30 @@ assert.equal(elements.get('legacyDodged').textContent, '17', 'old estimated poin
 elements.get('quality').value = 'high';
 events.get('quality:change')();
 events.get('closeSettings:click')();
-fullCanvasFills = 0;
+let framesMark = art().debug.frames;
 for (let time = 100000; time < 100960; time += 16) nextFrame(time);
-const highQualityFills = fullCanvasFills;
-assert(highQualityFills > 100, 'high quality should render nearly every display frame');
-const gradientsBeforeResize = waterGradientCreates;
+const highQualityFills = art().debug.frames - framesMark;
+assert(highQualityFills >= 58, 'high quality should render nearly every display frame');
+const gradientsBeforeResize = mainGradients;
 events.get('openingSettings:click')();
 elements.get('quality').value = 'low';
 events.get('quality:change')();
 events.get('closeSettings:click')();
-fullCanvasFills = 0;
+framesMark = art().debug.frames;
 for (let time = 101000; time < 101960; time += 16) nextFrame(time);
-assert(fullCanvasFills < highQualityFills * 0.7, 'reduced quality should draw substantially fewer frames');
-assert.equal(waterGradientCreates, gradientsBeforeResize, 'water gradient should remain cached');
+assert(art().debug.frames - framesMark < highQualityFills * 0.7, 'reduced quality should draw substantially fewer frames');
+assert.equal(mainGradients, gradientsBeforeResize, 'the water gradient should remain cached');
 stageHeight = 1100;
 events.get('window:resize')();
 nextFrame(102000);
-assert.equal(waterGradientCreates, gradientsBeforeResize + 1, 'resizing should rebuild the water gradient');
-fullCanvasFills = 0;
+assert.equal(mainGradients, gradientsBeforeResize + 1, 'resizing should rebuild the water gradient');
+framesMark = art().debug.frames;
 for (let time = 103000; time < 104000; time += 1000 / 30) nextFrame(time);
-assert(fullCanvasFills >= 58, 'reduced quality should not halve an actual 30 Hz display');
+assert(art().debug.frames - framesMark >= 29, 'reduced quality should not halve an actual 30 Hz display');
 sandbox.document.hidden = true;
-fullCanvasFills = 0;
+framesMark = art().debug.frames;
 nextFrame(104050);
-assert.equal(fullCanvasFills, 0, 'hidden pages should not redraw the canvas');
+assert.equal(art().debug.frames, framesMark, 'hidden pages should not redraw the canvas');
 
 // A long safe run should reach all four stages and draw the new lateral hazard.
 sandbox.document.hidden = false;
@@ -360,7 +340,7 @@ assert(shieldExpired, 'the shield indicator should disappear when protection end
 assert(elements.get('stageLabel').textContent.includes('Río bravo'), 'the final stage should remain playable without a distance cap');
 assert(elements.get('stageDistance').textContent.includes('sin fin'), 'the final stage should be endless');
 assert.equal(elements.get('stageProgress').style.width, '100%', 'the final progress indicator should be full');
-assert(driftDraws > 0, 'later stages should render moving driftwood');
+assert(art().debug.counts.drift > 0, 'later stages should render moving driftwood');
 assert(driftMoved, 'drifting logs must move sideways during play');
 assert(elements.get('stageToast').classList.contains('hidden'), 'stage announcements should disappear after a short time');
 
@@ -463,9 +443,9 @@ assert.equal(elements.get('boat-breeze').disabled, false, 'Explorer should unloc
 assert.equal(elements.get('boat-aurora').disabled, false, 'Captain should unlock Aurora');
 events.get('boat-breeze:click')();
 assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'breeze', 'the first rank boat should be equipable for free');
-boatColors.length = 0;
+gradientColors.length = 0;
 nextFrame(153550);
-assert(boatColors.includes('#53aa80'), 'Brisa should have its own visible hull color');
+assert.equal(art().debug.hull, 'breeze', 'Brisa should have its own visible hull color');
 events.get('boat-aurora:click')();
 assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'aurora', 'the final rank boat should be equipable for free');
 assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, rankedEconomy.events.length,
@@ -476,9 +456,9 @@ assert.equal(JSON.parse(elements.get('backupText').value).economy.events.length,
 launch(inspectedSource, sandbox);
 assert(elements.get('playerTag').textContent.includes('Capitán del río'), 'the rank should survive a fresh game launch');
 assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'aurora', 'the chosen rank boat should survive a relaunch');
-boatColors.length = 0;
+gradientColors.length = 0;
 nextFrame(154000);
-assert(boatColors.includes('#9163c9'), 'Aurora should have its own visible hull color');
+assert.equal(art().debug.hull, 'aurora', 'Aurora should have its own visible hull color');
 events.get('play:click')();
 sandbox.window.__finishForTest();
 assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, rankedEconomy.events.length + 1,
@@ -583,3 +563,4 @@ assert.equal(storage.get('rio-aventura-economy-v1'), walletBeforeBadImport,
 delete sandbox.Date;
 console.log('Visual smoke test passed');
 require('./progress-safety.cjs');
+require('./art-render.cjs');

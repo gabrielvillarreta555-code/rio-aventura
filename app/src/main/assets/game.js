@@ -1,7 +1,8 @@
 (() => {
   'use strict';
   const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const art = window.RioArt.create({ canvas, ctx, document });
   const overlay = document.getElementById('overlay');
   const title = document.getElementById('title');
   const message = document.getElementById('message');
@@ -59,6 +60,12 @@
   const maxPendingRuns = 10;
   const maxAppliedRuns = 20;
   const tripSaveSeconds = 3;
+  const gfxKey = 'rio-aventura-gfx-v1';
+  // Escalera de calidad gráfica automática: de menor a mayor detalle y resolución.
+  const gfxTiers = [
+    { detail: 0, scale: 0.85 }, { detail: 0, scale: 1 }, { detail: 1, scale: 1 }, { detail: 2, scale: 1 },
+    { detail: 2, scale: 1.25 }, { detail: 2, scale: 1.5 }, { detail: 2, scale: 2 }
+  ];
   const monthLengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   const avatars = ['🚤', '🧒', '🐬', '🌊'];
   const boats = [
@@ -68,6 +75,7 @@
     { id: 'breeze', name: 'Brisa', price: 0, unlockRank: 'explorer', hull: ['#b2e7bd', '#53aa80', '#266257'], trim: '#ebffe0' },
     { id: 'aurora', name: 'Aurora', price: 0, unlockRank: 'captain', hull: ['#e0b8fa', '#9163c9', '#413f8b'], trim: '#fff0c6' }
   ];
+  art.prepare(boats);
   const ranks = [
     { id: 'explorer', name: 'Explorador', badge: '🥉', distance: 250, dodged: 3, reward: 10 },
     { id: 'navigator', name: 'Navegante', badge: '🥈', distance: 800, dodged: 15, reward: 20 },
@@ -85,10 +93,10 @@
     { id: 'traveler', name: 'Viajero del río', metric: 'distance', target: 1500 }
   ];
   const stages = [
-    { start: 0, name: 'Orillas tranquilas', water: ['#18566c', '#2a9caa', '#64c8c2'], driftChance: 0 },
-    { start: 100, name: 'Troncos a la deriva', water: ['#145466', '#238c9d', '#4db6ae'], driftChance: 0.32 },
-    { start: 230, name: 'Corriente rápida', water: ['#123d61', '#257b9f', '#48a7b5'], driftChance: 0.42 },
-    { start: 400, name: 'Río bravo', water: ['#122d56', '#286888', '#3e94a4'], driftChance: 0.5 }
+    { start: 0, name: 'Orillas tranquilas', driftChance: 0 },
+    { start: 100, name: 'Troncos a la deriva', driftChance: 0.32 },
+    { start: 230, name: 'Corriente rápida', driftChance: 0.42 },
+    { start: 400, name: 'Río bravo', driftChance: 0.5 }
   ];
   const profile = readProfile();
   const stats = readStats();
@@ -114,7 +122,19 @@
   let cameraX = 0;
   let lastFrame = 0;
   let lastRender = -Infinity;
-  let waterGradient = null;
+  let renderScale = 1;
+  const pixelRatio = Number(window.devicePixelRatio) || 1;
+  const gfxMaxTier = pixelRatio >= 2 ? 6 : pixelRatio >= 1.5 ? 5 : 3;
+  let gfxTier = 3;
+  let gfxCeiling = gfxMaxTier;
+  let gfxEma = 16.7;
+  let gfxRefresh = 17;
+  let gfxClock = 0;
+  let gfxGood = 0;
+  let gfxBad = 0;
+  let gfxProbe = 0;
+  const scene = { height: 800, cameraX: 0, riverSpeed: 0, stageIndex: 0, quality: 'high', state: 'ready',
+    boat: null, boatStyle: boats[0], immunity: 0, shieldTimer: 0, impact: 0, obstacles: [], collectibles: [], particles: [] };
   let fpsWindowStart = 0;
   let fpsFrames = 0;
   let measuredFps = null;
@@ -580,7 +600,7 @@
     document.getElementById('totalDistance').textContent = `${stats.distance} m`;
     performanceInfo.textContent = measuredFps === null
       ? 'FPS: juega unos segundos para medirlos.'
-      : `Última medición: ${measuredFps} FPS dibujados.`;
+      : `Última medición: ${measuredFps} FPS dibujados. Gráficos: detalle ${currentTier().detail}, resolución ${currentTier().scale}×.`;
     updateGarageView();
     updateRankView();
     updateDailyView();
@@ -601,9 +621,8 @@
     const nextHeight = Math.max(800, Math.round(width * bounds.height / bounds.width));
     if (nextHeight === height) return;
     const difference = nextHeight - height;
-    canvas.height = nextHeight;
     height = nextHeight;
-    waterGradient = null;
+    applyCanvasSize();
     if (boat) boat.y += difference;
     if (obstacles) obstacles.forEach(item => { item.y += difference; });
     if (collectibles) collectibles.forEach(coin => { coin.y += difference; });
@@ -637,7 +656,6 @@
     score = 0;
     collectedCoins = 0;
     runDistance = 0;
-    if (stageIndex !== 0) waterGradient = null;
     stageIndex = 0;
     stageHudTimer = 0;
     stageToastTimer = 0;
@@ -889,7 +907,6 @@
     runDistance = trip.distance;
     elapsed = trip.elapsed;
     stageIndex = stageIndexFor(runDistance);
-    waterGradient = null;
     riverSpeed = Math.min(390, 190 + elapsed * 3.2);
     shieldTimer = 3;
     spawnIn = 1.2;
@@ -974,7 +991,7 @@
     if (tripReward(runDistance, score, collectedCoins) !== hudReward) updateCoinHud();
     if (stageIndex < stages.length - 1 && runDistance >= stages[stageIndex + 1].start) {
       stageIndex++;
-      waterGradient = null;
+      art.effect('stage', boat.x, boat.y);
       const healed = lives < 3;
       if (healed) lives++;
       shieldTimer = 3;
@@ -1021,6 +1038,7 @@
         coin.collected = true;
         collectedCoins++;
         splash(coin.x, coin.y, 9, '#ffdf85');
+        art.effect('coin', coin.x, coin.y);
         updateCoinHud();
       }
     }
@@ -1039,7 +1057,10 @@
       if (!item.hit && separation < contactRadius) {
         item.hit = true;
         if (immunity !== 0 || shieldTimer > 0) {
-          if (shieldTimer > 0) splash(item.x, item.y, 7, '#ffdf85');
+          if (shieldTimer > 0) {
+            splash(item.x, item.y, 7, '#ffdf85');
+            art.effect('shield', item.x, item.y);
+          }
           continue;
         }
         lives--;
@@ -1048,6 +1069,7 @@
         boat.vx *= 0.45;
         riverSpeed *= 0.75;
         splash(boat.x, boat.y, 22, '#ffffff');
+        art.effect('hit', boat.x, boat.y);
         updateHud();
         if (lives === 0) { finish(); return; }
       }
@@ -1062,352 +1084,96 @@
     obstacles = obstacles.filter(item => item.y < height + 50);
   }
 
-  function riverEdge(side, y) {
-    return projectedX(side ? width - 52 : 52, y);
-  }
-
-  function drawTree(x, y, size) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(size, size);
-    ctx.fillStyle = '#092e3280';
-    ctx.beginPath(); ctx.ellipse(16, 17, 29, 10, -0.2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#61452c';
-    ctx.fillRect(-4, -28, 8, 42);
-    ctx.fillStyle = '#174b3b';
-    ctx.beginPath(); ctx.arc(-14, -35, 20, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(15, -37, 21, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#2f8b59';
-    ctx.beginPath(); ctx.arc(0, -51, 23, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#69b875';
-    ctx.beginPath(); ctx.ellipse(-8, -59, 9, 5, -0.45, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
-
-  function drawRiver() {
-    ctx.fillStyle = '#224d3a';
-    ctx.fillRect(0, 0, width, height);
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(riverEdge(0, 0), 0);
-    ctx.lineTo(riverEdge(1, 0), 0);
-    ctx.lineTo(riverEdge(1, height), height);
-    ctx.lineTo(riverEdge(0, height), height);
-    ctx.closePath();
-    ctx.clip();
-    if (!waterGradient) {
-      waterGradient = ctx.createLinearGradient(0, 0, width, height);
-      waterGradient.addColorStop(0, stages[stageIndex].water[0]);
-      waterGradient.addColorStop(0.47, stages[stageIndex].water[1]);
-      waterGradient.addColorStop(1, stages[stageIndex].water[2]);
-    }
-    ctx.fillStyle = waterGradient;
-    ctx.fillRect(0, 0, width, height);
-    if (profile.quality === 'high') {
-      const shimmer = (elapsed * 82) % 190;
-      for (let y = shimmer - 190; y < height + 90; y += 190) {
-        const left = riverEdge(0, y) + 18;
-        const right = riverEdge(1, y) - 18;
-        ctx.strokeStyle = '#dcfff038';
-        ctx.lineWidth = 14 * depthAt(y);
-        ctx.beginPath();
-        ctx.moveTo(left, y + 18);
-        ctx.bezierCurveTo(left + 52, y - 12, right - 55, y + 46, right, y + 10);
-        ctx.stroke();
-      }
-    }
-    for (const side of [0, 1]) {
-      const bankShade = ctx.createLinearGradient(riverEdge(side, height / 2), 0, width / 2, 0);
-      bankShade.addColorStop(0, '#113f5688');
-      bankShade.addColorStop(1, '#113f5600');
-      ctx.fillStyle = bankShade;
-      const edge = riverEdge(side, height / 2);
-      ctx.fillRect(side ? edge - 28 : edge, 0, 28, height);
-    }
-    const flow = (elapsed * 125) % 125;
-    for (let y = flow - 125; y < height + 50; y += 125) {
-      for (const x of [115, 225, 335]) {
-        const center = projectedX(x + Math.sin(elapsed * 1.8 + y * 0.018) * 5, y);
-        const size = 12 * depthAt(y);
-        ctx.strokeStyle = '#e6ffff99';
-        ctx.lineWidth = 2.5 * depthAt(y);
-        ctx.beginPath();
-        ctx.moveTo(center - size, y);
-        ctx.quadraticCurveTo(center, y - size * 0.6, center + size, y);
-        ctx.stroke();
-        ctx.strokeStyle = '#b7f8ee88';
-        ctx.beginPath();
-        ctx.moveTo(center - size * 0.45, y + 9);
-        ctx.lineTo(center + size * 0.45, y + 9);
-        ctx.stroke();
-      }
-    }
-    if (profile.quality === 'high') {
-      const shoreFlow = (elapsed * 105) % 92;
-      for (const side of [0, 1]) {
-        const inward = side ? -1 : 1;
-        for (let y = shoreFlow - 92; y < height + 25; y += 92) {
-          const x = riverEdge(side, y) + inward * (13 + 5 * Math.sin(y * 0.025));
-          ctx.strokeStyle = '#d8fff1aa';
-          ctx.lineWidth = 2 * depthAt(y);
-          ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.quadraticCurveTo(x + inward * 9, y - 6, x + inward * 17, y + 2);
-          ctx.stroke();
-        }
-      }
-    }
-    ctx.restore();
-    for (const side of [0, 1]) {
-      ctx.strokeStyle = '#102f32';
-      ctx.lineWidth = 13;
-      ctx.beginPath(); ctx.moveTo(riverEdge(side, 0), 0);
-      ctx.lineTo(riverEdge(side, height), height); ctx.stroke();
-      ctx.strokeStyle = '#dac78c';
-      ctx.lineWidth = 6;
-      ctx.beginPath(); ctx.moveTo(riverEdge(side, 0), 0);
-      ctx.lineTo(riverEdge(side, height), height); ctx.stroke();
-      for (let y = (elapsed * 94) % 165 - 165; y < height + 110; y += profile.quality === 'low' ? 330 : 165) {
-        const treeX = riverEdge(side, y) + (side ? 30 : -30);
-        drawTree(treeX, y, 0.58 + 0.5 * depthAt(y));
-      }
-    }
-  }
-
-  function drawObstacle(item) {
-    ctx.save();
-    ctx.translate(projectedX(item.x, item.y), item.y + Math.sin(elapsed * 3 + item.phase) * 3);
-    ctx.scale(depthAt(item.y), depthAt(item.y));
-    const ripple = (elapsed * 24 + item.phase * 4) % 18;
-    ctx.strokeStyle = '#e9ffffa8';
-    ctx.lineWidth = 2;
-    for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.moveTo(side * (item.radius + 2), 10);
-      ctx.quadraticCurveTo(side * (item.radius + 15), 17 + ripple * 0.4,
-        side * (item.radius + 12), 24 + ripple);
-      ctx.stroke();
-    }
-    if (item.kind === 'rock') {
-      ctx.fillStyle = '#0d3b4977';
-      ctx.beginPath();
-      ctx.ellipse(8, 16, item.radius + 12, item.radius * 0.48, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#dff8ed88';
-      ctx.beginPath();
-      ctx.ellipse(0, 10, item.radius + 11, item.radius * 0.7, 0, 0, Math.PI * 2);
-      ctx.fill();
-      const stone = ctx.createRadialGradient(-8, -12, 3, 0, 0, item.radius + 6);
-      stone.addColorStop(0, '#a9bec1');
-      stone.addColorStop(1, '#455d66');
-      ctx.fillStyle = stone;
-      ctx.beginPath();
-      ctx.arc(0, -3, item.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#718d94';
-      ctx.beginPath();
-      ctx.moveTo(-item.radius * 0.62, 1);
-      ctx.lineTo(-3, -item.radius * 0.62);
-      ctx.lineTo(9, item.radius * 0.42);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = '#aebdc0';
-      ctx.beginPath();
-      ctx.arc(-7, -10, item.radius * 0.26, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      ctx.rotate(Math.sin(elapsed * 2 + item.phase) * 0.12 + 0.18);
-      ctx.fillStyle = '#0d3b4977';
-      ctx.beginPath(); ctx.ellipse(8, 16, 38, 13, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#dcf6ec88';
-      ctx.beginPath();
-      ctx.ellipse(0, 8, 38, 16, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = item.kind === 'drift' ? '#925b35' : '#764b31';
-      ctx.fillRect(-31, -12, 62, 24);
-      ctx.fillStyle = '#aa7045';
-      ctx.fillRect(-31, -12, 62, 5);
-      ctx.fillStyle = '#c38b58';
-      ctx.beginPath(); ctx.ellipse(-31, 0, 5, 12, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#d3955c';
-      ctx.lineWidth = 2;
-      for (const x of [-18, 4, 20]) {
-        ctx.beginPath(); ctx.moveTo(x, -5); ctx.lineTo(x + 8, 8); ctx.stroke();
-      }
-      if (item.kind === 'drift') {
-        ctx.fillStyle = '#ffdf85';
-        ctx.beginPath();
-        ctx.moveTo(item.vx > 0 ? 20 : -20, -3);
-        ctx.lineTo(item.vx > 0 ? 13 : -13, -9);
-        ctx.lineTo(item.vx > 0 ? 13 : -13, 3);
-        ctx.closePath(); ctx.fill();
-      }
-    }
-    ctx.restore();
-  }
-
-  function drawCollectibles() {
-    for (const coin of collectibles) {
-      ctx.save();
-      ctx.translate(projectedX(coin.x, coin.y), coin.y + Math.sin(elapsed * 5 + coin.phase) * 3);
-      ctx.scale(depthAt(coin.y), depthAt(coin.y));
-      ctx.fillStyle = '#17384588';
-      ctx.beginPath(); ctx.ellipse(4, 16, 20, 7, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#fff2ae99';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.ellipse(0, 12, 20, 8, 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = '#a76f21';
-      ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffdf6b';
-      ctx.beginPath(); ctx.arc(0, -3, 13, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#fff2ae';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(0, -3, 8, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
-    }
-  }
-
-  function drawWake() {
-    const x = projectedX(boat.x, boat.y);
-    const turn = boat.vx / 285;
-    const length = 44 + riverSpeed * 0.07 + Math.abs(turn) * 20;
-    ctx.save();
-    ctx.lineCap = 'round';
-    for (const side of [-1, 1]) {
-      ctx.strokeStyle = '#e8ffffa8';
-      ctx.lineWidth = 3 + Math.abs(turn) * 2;
-      ctx.beginPath();
-      ctx.moveTo(x + side * 25, boat.y + 26);
-      ctx.quadraticCurveTo(x + side * 37 - turn * 12, boat.y + length * 0.65,
-        x + side * (44 + Math.abs(turn) * 10) - turn * 18, boat.y + length);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  function drawBoat() {
-    if (immunity > 0 && Math.floor(immunity * 10) % 2 === 0) return;
-    ctx.save();
-    ctx.translate(projectedX(boat.x, boat.y), boat.y + Math.sin(elapsed * 7) * 3);
-    ctx.scale(depthAt(boat.y), depthAt(boat.y));
-    if (shieldTimer > 0) {
-      ctx.strokeStyle = '#ffdf85';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(0, 4, 59 + Math.sin(elapsed * 8) * 2, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.rotate(boat.tilt + Math.sin(elapsed * 3) * 0.025);
-    ctx.fillStyle = '#0b34468c';
-    ctx.beginPath();
-    ctx.ellipse(9, 38, 48, 15, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#e9ffff99';
-    ctx.beginPath();
-    ctx.ellipse(0, 30, 48, 17, 0, 0, Math.PI * 2);
-    ctx.fill();
-    const hull = ctx.createLinearGradient(-42, -18, 42, 34);
-    const selectedBoat = boats.find(item => item.id === economy.selected) || boats[0];
-    hull.addColorStop(0, selectedBoat.hull[0]);
-    hull.addColorStop(0.48, selectedBoat.hull[1]);
-    hull.addColorStop(1, selectedBoat.hull[2]);
-    ctx.fillStyle = hull;
-    ctx.beginPath();
-    ctx.moveTo(0, -45);
-    ctx.quadraticCurveTo(45, -20, 40, 15);
-    ctx.quadraticCurveTo(30, 47, 0, 53);
-    ctx.quadraticCurveTo(-30, 47, -40, 15);
-    ctx.quadraticCurveTo(-45, -20, 0, -45);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = selectedBoat.trim;
-    ctx.lineWidth = 4;
-    ctx.stroke();
-    ctx.fillStyle = '#9b6037';
-    ctx.beginPath();
-    ctx.ellipse(0, 5, 29, 34, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#653b2c';
-    ctx.fillRect(-27, 20, 54, 6);
-    const stroke = Math.sin(elapsed * (9 + riverSpeed / 100)) * (0.65 + Math.abs(boat.vx) / 950);
-    ctx.strokeStyle = '#633b28';
-    ctx.lineWidth = 5;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(-13, 6);
-    ctx.lineTo(-48 - stroke * 8, 25 + stroke * 9);
-    ctx.stroke();
-    ctx.fillStyle = '#ad7540';
-    ctx.save();
-    ctx.translate(-48 - stroke * 8, 25 + stroke * 9);
-    ctx.rotate(-0.55 + stroke * 0.15);
-    ctx.beginPath(); ctx.ellipse(0, 0, 5, 15, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-    ctx.translate(0, 5);
-    ctx.rotate(boat.lean);
-    ctx.translate(0, -5);
-    ctx.fillStyle = '#ed7656';
-    ctx.beginPath();
-    ctx.ellipse(0, 7, 13, 19, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#d89066';
-    ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(-17, 13); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(18, 13); ctx.stroke();
-    ctx.fillStyle = '#e8ac7f';
-    ctx.beginPath();
-    ctx.arc(0, -15, 12, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#3a2927';
-    ctx.beginPath();
-    ctx.arc(0, -21, 11, Math.PI, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#322d2b';
-    ctx.beginPath(); ctx.arc(-4, -15, 1.5, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(4, -15, 1.5, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
-
-  function drawParticles() {
-    for (const particle of particles) {
-      ctx.globalAlpha = Math.max(0, 1 - particle.age / particle.life);
-      ctx.fillStyle = particle.color;
-      ctx.beginPath();
-      ctx.arc(projectedX(particle.x, particle.y), particle.y,
-        particle.radius * depthAt(particle.y) * (1 + particle.age), 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
+  function applyCanvasSize() {
+    canvas.width = Math.round(width * renderScale);
+    canvas.height = Math.round(height * renderScale);
+    scene.height = height;
+    art.resize(height, renderScale);
+    art.setQuality(profile.quality);
   }
 
   function render() {
-    ctx.save();
-    if (impact > 0) ctx.translate((Math.random() - 0.5) * impact * 13, (Math.random() - 0.5) * impact * 13);
-    drawRiver();
-    drawWake();
-    drawCollectibles();
-    // All obstacles move at the same speed; newest first is farthest away.
-    let boatDrawn = false;
-    for (let i = obstacles.length - 1; i >= 0; i--) {
-      if (!boatDrawn && obstacles[i].y > boat.y) {
-        drawParticles();
-        drawBoat();
-        boatDrawn = true;
-      }
-      drawObstacle(obstacles[i]);
+    scene.cameraX = cameraX;
+    scene.riverSpeed = riverSpeed;
+    scene.stageIndex = stageIndex;
+    scene.quality = profile.quality;
+    scene.state = state;
+    scene.boat = boat;
+    scene.boatStyle = boats.find(item => item.id === economy.selected) || boats[0];
+    scene.immunity = immunity;
+    scene.shieldTimer = shieldTimer;
+    scene.impact = impact;
+    scene.obstacles = obstacles;
+    scene.collectibles = collectibles;
+    scene.particles = particles;
+    art.draw(scene);
+  }
+
+  function currentTier() {
+    return profile.quality === 'low' ? gfxTiers[1] : gfxTiers[gfxTier];
+  }
+
+  function applyGraphicsTier() {
+    const tier = currentTier();
+    art.setDetail(tier.detail);
+    if (tier.scale !== renderScale) {
+      renderScale = tier.scale;
+      applyCanvasSize();
     }
-    if (!boatDrawn) { drawParticles(); drawBoat(); }
-    ctx.restore();
-    if (impact > 0) {
-      ctx.fillStyle = `rgba(255,255,255,${impact * 0.23})`;
-      ctx.fillRect(0, 0, width, height);
+  }
+
+  function readStoredTier() {
+    const saved = readObject(gfxKey);
+    return Number.isInteger(saved.tier) && saved.tier >= 1 && saved.tier <= gfxMaxTier ? saved.tier : 3;
+  }
+
+  function setGraphicsTier(next) {
+    gfxTier = Math.max(0, Math.min(gfxMaxTier, next));
+    gfxGood = 0;
+    gfxBad = 0;
+    saveObject(gfxKey, { tier: gfxTier });
+    applyGraphicsTier();
+  }
+
+  // Mide el tiempo real entre fotogramas y ajusta detalle y resolución: baja deprisa si el
+  // teléfono se atasca y sube despacio solo si va sobrado. No toca la física del juego.
+  function adaptGraphics(interval) {
+    if (interval > 250 || profile.quality !== 'high') return;
+    gfxEma += (interval - gfxEma) * 0.08;
+    gfxRefresh = Math.max(6, Math.min(gfxRefresh, interval));
+    gfxClock += interval;
+    if (gfxClock < 1500) return;
+    gfxClock = 0;
+    const budget = Math.max(gfxRefresh, 16.7);
+    const slow = gfxEma > Math.max(budget * 1.3, 20);
+    const severe = gfxEma > budget * 2.2;
+    const smooth = gfxEma < gfxRefresh * 1.15;
+    gfxBad = slow ? gfxBad + 1 : 0;
+    gfxGood = smooth && !slow ? gfxGood + 1 : 0;
+    if (gfxProbe > 0) gfxProbe--;
+    if (gfxProbe > 0 && !smooth && gfxTier > 0) {
+      // Una subida a prueba solo se mantiene si el teléfono sigue yendo holgado.
+      gfxCeiling = Math.min(gfxCeiling, gfxTier - 1);
+      gfxProbe = 0;
+      setGraphicsTier(gfxTier - 1);
+    } else if ((gfxBad >= 2 || (severe && gfxBad >= 1)) && gfxTier > 0) {
+      if (gfxProbe > 0) gfxCeiling = Math.min(gfxCeiling, gfxTier - 1);
+      setGraphicsTier(gfxTier - (severe ? 2 : 1));
+    } else if (gfxGood >= 6 && gfxTier < gfxCeiling) {
+      gfxProbe = 3;
+      setGraphicsTier(gfxTier + 1);
     }
   }
 
   function frame(now) {
-    const dt = Math.min(0.05, (now - lastFrame) / 1000 || 0);
+    const interval = now - lastFrame;
+    const dt = Math.min(0.05, interval / 1000 || 0);
     lastFrame = now;
+    if (state === 'playing' && !document.hidden) adaptGraphics(interval);
     step(dt);
+    scene.cameraX = cameraX;
+    scene.stageIndex = stageIndex;
+    art.update(dt, state === 'playing' ? riverSpeed : state === 'paused' ? 0 : 60, scene);
     if (rankToastTimer > 0) {
       rankToastTimer = Math.max(0, rankToastTimer - dt);
       if (rankToastTimer === 0) rankToast.classList.add('hidden');
@@ -1486,6 +1252,8 @@
   });
   qualitySelect.addEventListener('change', () => {
     profile.quality = qualitySelect.value === 'low' ? 'low' : 'high';
+    art.setQuality(profile.quality);
+    applyGraphicsTier();
     profileNotice.textContent = saveObject(profileKey, profile) ? 'Calidad guardada.' : 'No se pudo guardar en este teléfono.';
   });
   for (const boatOption of boats) {
@@ -1624,6 +1392,10 @@
   }
   window.addEventListener('pagehide', saveBeforeLeaving);
   window.rioAventuraSave = saveBeforeLeaving;
+  gfxTier = readStoredTier();
+  renderScale = currentTier().scale;
+  applyCanvasSize();
+  applyGraphicsTier();
   resizeStage();
   window.addEventListener('resize', resizeStage);
   reset();
