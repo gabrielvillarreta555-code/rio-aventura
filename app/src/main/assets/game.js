@@ -2,6 +2,7 @@
   'use strict';
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d', { alpha: false });
+  const world = window.RioWorld;
   const art = window.RioArt.create({ canvas, ctx, document });
   const overlay = document.getElementById('overlay');
   const title = document.getElementById('title');
@@ -44,6 +45,8 @@
   const economyKey = 'rio-aventura-economy-v1';
   const economyBackupFormat = 'rio-aventura-progress-v2';
   const compactBackupFormat = 'rio-aventura-progress-v3';
+  const worldBackupFormat = 'rio-aventura-progress-v4';
+  const maxEventAmount = 200;
   const tripKey = 'rio-aventura-trip-v1';
   const settleKey = 'rio-aventura-settle-v1';
   const idPattern = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -90,7 +93,9 @@
     { id: 'first', name: 'Primer viaje', metric: 'runs', target: 1 },
     { id: 'regular', name: 'Remero constante', metric: 'runs', target: 10 },
     { id: 'dodger', name: 'Esquivador', metric: 'dodged', target: 25 },
-    { id: 'traveler', name: 'Viajero del río', metric: 'distance', target: 1500 }
+    { id: 'traveler', name: 'Viajero del río', metric: 'distance', target: 1500 },
+    { id: 'explorer', name: 'Primer destino', metric: 'discovered', target: 1 },
+    { id: 'cartographer', name: 'Cartógrafo', metric: 'discovered', target: world.destinations.length }
   ];
   const stages = [
     { start: 0, name: 'Orillas tranquilas', driftChance: 0 },
@@ -103,6 +108,10 @@
   let economyError = false;
   const economy = readEconomy();
   let state = 'ready';
+  let activeRoute = null;
+  let launchRouteId = null;
+  let tune = world.defaultTune;
+  let tripStages = stages;
   let economyView = null;
   let tripId = null;
   let tripSaveIn = tripSaveSeconds;
@@ -133,7 +142,7 @@
   let gfxGood = 0;
   let gfxBad = 0;
   let gfxProbe = 0;
-  const scene = { height: 800, cameraX: 0, riverSpeed: 0, stageIndex: 0, quality: 'high', state: 'ready',
+  const scene = { height: 800, cameraX: 0, riverSpeed: 0, stageIndex: 0, theme: 'free', remaining: -1, quality: 'high', state: 'ready',
     boat: null, boatStyle: boats[0], immunity: 0, shieldTimer: 0, impact: 0, obstacles: [], collectibles: [], particles: [] };
   let fpsWindowStart = 0;
   let fpsFrames = 0;
@@ -217,6 +226,8 @@
     const dailyProgress = new Map();
     const claimedMissions = new Set();
     const seen = new Set();
+    const discovered = new Set();
+    const arrivals = new Map();
     let lastDay = '';
     let coins = 0;
     if (base) {
@@ -226,16 +237,20 @@
       for (const id of base.ranks) earnedRanks.add(id);
       for (const key of base.claimed) claimedMissions.add(key);
       for (const day of Object.keys(base.daily)) dailyProgress.set(day, { ...base.daily[day] });
+      for (const id of base.discovered) discovered.add(id);
+      for (const id of Object.keys(base.arrivals)) arrivals.set(id, base.arrivals[id]);
     }
     for (const event of events) {
       if (!event || typeof event.id !== 'string' || !idPattern.test(event.id) || seen.has(event.id)) return null;
       seen.add(event.id);
-      if (event.type === 'earn' && Number.isInteger(event.amount) && event.amount >= 1 && event.amount <= 80) {
+      if (event.type === 'earn' && Number.isInteger(event.amount) && event.amount >= 1 && event.amount <= maxEventAmount) {
         const hasRank = Object.prototype.hasOwnProperty.call(event, 'rank');
         const hasRun = Object.prototype.hasOwnProperty.call(event, 'run');
+        const hasDiscover = Object.prototype.hasOwnProperty.call(event, 'discover');
         const hasDaily = Object.prototype.hasOwnProperty.call(event, 'dailyDay') ||
           Object.prototype.hasOwnProperty.call(event, 'dailyMission');
-        if (Number(hasRank) + Number(hasRun) + Number(hasDaily) > 1) return null;
+        if (Number(hasRank) + Number(hasRun) + Number(hasDaily) + Number(hasDiscover) > 1) return null;
+        if (!hasDiscover && event.amount > 80) return null;
         if (hasRank) {
           const rank = ranks.find(item => item.id === event.rank);
           if (!rank || event.amount !== rank.reward || earnedRanks.has(rank.id)) return null;
@@ -244,13 +259,20 @@
           const run = event.run;
           if (!run || !validDayKey(run.day) || (run.id !== undefined && !validRunId(run.id)) ||
               ![run.distance, run.dodged, run.pickups].every(value =>
-                Number.isInteger(value) && value >= 0 && value <= maxCount)) return null;
+                Number.isInteger(value) && value >= 0 && value <= maxCount) ||
+              (run.route !== undefined && !world.validId(run.route)) ||
+              (run.arrived !== undefined && (run.arrived !== true || run.route === undefined))) return null;
+          if (run.arrived) arrivals.set(run.route, (arrivals.get(run.route) || 0) + 1);
           const progress = dailyProgress.get(run.day) || { distance: 0, dodged: 0, pickups: 0 };
           progress.distance += run.distance;
           progress.dodged += run.dodged;
           progress.pickups += run.pickups;
           dailyProgress.set(run.day, progress);
           if (run.day > lastDay) lastDay = run.day;
+        } else if (hasDiscover) {
+          // Un destino solo se descubre una vez: la repetición haría inválido el historial.
+          if (!world.validId(event.discover) || discovered.has(event.discover)) return null;
+          discovered.add(event.discover);
         } else if (hasDaily) {
           const mission = dailyMissions.find(item => item.id === event.dailyMission);
           const claimKey = `${event.dailyDay}:${event.dailyMission}`;
@@ -273,7 +295,7 @@
     for (const boatOption of boats) {
       if (boatOption.unlockRank && earnedRanks.has(boatOption.unlockRank)) owned.add(boatOption.id);
     }
-    return { coins, owned, earnedRanks, dailyProgress, claimedMissions, lastDay };
+    return { coins, owned, earnedRanks, dailyProgress, claimedMissions, lastDay, discovered, arrivals };
   }
 
   function validateBase(base) {
@@ -289,6 +311,11 @@
         !Array.isArray(base.ranks) || !unique(base.ranks) || !base.ranks.every(id => ranks.some(item => item.id === id)) ||
         (base.lastDay !== '' && !validDayKey(base.lastDay)) ||
         !base.daily || typeof base.daily !== 'object' || Array.isArray(base.daily)) return null;
+    const found = base.discovered === undefined ? [] : base.discovered;
+    const visits = base.arrivals === undefined ? {} : base.arrivals;
+    if (!Array.isArray(found) || !unique(found) || found.length > 64 || !found.every(id => world.validId(id)) ||
+        !visits || typeof visits !== 'object' || Array.isArray(visits) || Object.keys(visits).length > 64 ||
+        !Object.keys(visits).every(id => world.validId(id) && count(visits[id]))) return null;
     const days = Object.keys(base.daily);
     if (days.length > maxDays || !days.every(day => validDayKey(day) && base.daily[day] &&
         ['distance', 'dodged', 'pickups'].every(key => count(base.daily[day][key])))) return null;
@@ -301,15 +328,24 @@
       daily[day] = { distance: counts.distance, dodged: counts.dodged, pickups: counts.pickups };
     }
     return { count: base.count, hash: base.hash, marks: base.marks.map(mark => ({ count: mark.count, hash: mark.hash })),
-      coins: base.coins, owned: [...base.owned], ranks: [...base.ranks], lastDay: base.lastDay, daily, claimed: [...base.claimed] };
+      coins: base.coins, owned: [...base.owned], ranks: [...base.ranks], lastDay: base.lastDay, daily, claimed: [...base.claimed],
+      discovered: [...found], arrivals: { ...visits } };
+  }
+
+  // Un historial usa el formato 3 en cuanto contiene destinos descubiertos o viajes con ruta:
+  // la versión anterior (formatos 1 y 2) lo rechaza sin dañarlo en lugar de ignorar esos datos.
+  function usesWorld(value) {
+    const base = value.base;
+    if (base && (base.discovered.length || Object.keys(base.arrivals).length)) return true;
+    return value.events.some(event => event && (event.discover !== undefined || (event.run && event.run.route !== undefined)));
   }
 
   function validateEconomy(value) {
-    if (!value || (value.version !== 1 && value.version !== 2) || typeof value.deviceId !== 'string' ||
+    if (!value || (value.version !== 1 && value.version !== 2 && value.version !== 3) || typeof value.deviceId !== 'string' ||
         !idPattern.test(value.deviceId) || !Number.isInteger(value.nextEvent) || value.nextEvent < 1 ||
         !Array.isArray(value.events) || (value.appliedRuns !== undefined && !validRunList(value.appliedRuns))) return null;
     let base = null;
-    if (value.version === 2) {
+    if (value.version === 2 || (value.version === 3 && value.base !== undefined)) {
       base = validateBase(value.base);
       if (!base || value.events.length > maxTailEvents) return null;
     } else if (value.base !== undefined || value.events.length > maxLegacyEvents) return null;
@@ -327,6 +363,9 @@
         a.earnedRanks.size !== b.earnedRanks.size) return false;
     for (const id of a.owned) if (!b.owned.has(id)) return false;
     for (const id of a.earnedRanks) if (!b.earnedRanks.has(id)) return false;
+    if (a.discovered.size !== b.discovered.size || a.arrivals.size !== b.arrivals.size) return false;
+    for (const id of a.discovered) if (!b.discovered.has(id)) return false;
+    for (const [id, visitCount] of a.arrivals) if (b.arrivals.get(id) !== visitCount) return false;
     if (JSON.stringify(a.dailyProgress.get(a.lastDay) || null) !== JSON.stringify(b.dailyProgress.get(b.lastDay) || null)) return false;
     return dailyMissions.every(mission =>
       a.claimedMissions.has(`${a.lastDay}:${mission.id}`) === b.claimedMissions.has(`${b.lastDay}:${mission.id}`));
@@ -357,8 +396,10 @@
       owned: boats.filter(item => item.price > 0 && summary.owned.has(item.id)).map(item => item.id),
       ranks: ranks.filter(item => summary.earnedRanks.has(item.id)).map(item => item.id),
       lastDay: summary.lastDay, daily,
-      claimed: [...summary.claimedMissions].filter(key => recentDays.includes(key.slice(0, 10)))
+      claimed: [...summary.claimedMissions].filter(key => recentDays.includes(key.slice(0, 10))),
+      discovered: [...summary.discovered], arrivals: Object.fromEntries(summary.arrivals)
     } };
+    candidate.version = usesWorld(candidate) ? 3 : 2;
     const after = validateEconomy(candidate);
     const afterView = after && replayEconomy(after.events, after.base);
     return afterView && sameEconomyState(before, afterView) ? after : value;
@@ -410,7 +451,8 @@
 
   function saveEconomy(next, allowRecovery = false) {
     if (economyError && !allowRecovery) return false;
-    const compact = compactEconomy(next);
+    let compact = compactEconomy(next);
+    if (compact.version < 3 && usesWorld(compact)) compact = { ...compact, version: 3 };
     if (!validateEconomy(compact) || !saveObject(economyKey, compact)) return false;
     for (const key of Object.keys(economy)) if (!(key in compact)) delete economy[key];
     Object.assign(economy, compact);
@@ -431,6 +473,26 @@
   function currentView() {
     if (!economyView) economyView = replayEconomy(economy.events, economy.base || null);
     return economyView;
+  }
+
+  function worldContext() {
+    const view = currentView();
+    return { discovered: view.discovered, ranks: view.earnedRanks };
+  }
+
+  function routeOpen(id) {
+    return Boolean(world.routeById(id)) && world.isOpen(id, worldContext());
+  }
+
+  function setActiveRoute(id) {
+    activeRoute = id ? world.routeById(id) : null;
+    tune = activeRoute ? activeRoute.tune : world.defaultTune;
+    tripStages = activeRoute ? activeRoute.stages : stages;
+    scene.theme = activeRoute ? activeRoute.theme : 'free';
+  }
+
+  function remainingMeters() {
+    return activeRoute ? Math.max(0, activeRoute.distance - runDistance) : -1;
   }
 
   function tripReward(distance, dodged, pickups) {
@@ -517,12 +579,16 @@
     }
   }
 
+  function achievementValue(achievement, statistics, discoveredCount) {
+    return achievement.metric === 'discovered' ? discoveredCount : statistics[achievement.metric];
+  }
+
   function updateAchievementView() {
+    const found = economyError ? 0 : currentView().discovered.size;
     for (const achievement of achievements) {
       const label = document.getElementById(`achievement-${achievement.id}`);
-      label.textContent = stats[achievement.metric] >= achievement.target
-        ? 'Desbloqueado'
-        : `${Math.min(stats[achievement.metric], achievement.target)}/${achievement.target}`;
+      const value = achievementValue(achievement, stats, found);
+      label.textContent = value >= achievement.target ? 'Desbloqueado' : `${Math.min(value, achievement.target)}/${achievement.target}`;
     }
   }
 
@@ -560,7 +626,7 @@
 
   function exportBackup() {
     return JSON.stringify({
-      format: economy.version === 2 ? compactBackupFormat : economyBackupFormat,
+      format: economy.version === 3 ? worldBackupFormat : economy.version === 2 ? compactBackupFormat : economyBackupFormat,
       profile: { ...profile },
       best: readBest(),
       stats: { ...stats },
@@ -572,7 +638,7 @@
     if (text.length > 3000000) return null;
     let backup;
     try { backup = JSON.parse(text); } catch (_) { return null; }
-    if (!backup || ![backupFormat, economyBackupFormat, compactBackupFormat].includes(backup.format) ||
+    if (!backup || ![backupFormat, economyBackupFormat, compactBackupFormat, worldBackupFormat].includes(backup.format) ||
         !backup.profile || !backup.stats) return null;
     const { name, avatar, quality } = backup.profile;
     if (typeof name !== 'string' || !name.trim() || name.length > 18 ||
@@ -629,6 +695,12 @@
   }
 
   function updateStageHud() {
+    if (activeRoute) {
+      stageLabel.textContent = `Hacia ${activeRoute.destination} · ${stageIndex + 1}/${tripStages.length}`;
+      stageDistance.textContent = `${Math.min(Math.floor(runDistance), activeRoute.distance)} / ${activeRoute.distance} m`;
+      stageProgress.style.width = `${Math.max(0, Math.min(100, runDistance / activeRoute.distance * 100))}%`;
+      return;
+    }
     const current = stages[stageIndex];
     const next = stages[stageIndex + 1];
     stageLabel.textContent = `Tramo ${stageIndex + 1} · ${current.name}`;
@@ -664,12 +736,12 @@
     rankToast.classList.add('hidden');
     lives = 3;
     elapsed = 0;
-    spawnIn = 0.6;
-    coinSpawnIn = 1.8;
+    spawnIn = tune.firstSpawn;
+    coinSpawnIn = tune.firstCoin;
     immunity = 0;
     shieldTimer = 0;
     direction = 0;
-    riverSpeed = 140;
+    riverSpeed = tune.speedStart;
     activePointerId = null;
     heldKeys.left = false;
     heldKeys.right = false;
@@ -701,6 +773,9 @@
   function begin() {
     settlePending();
     interrupted = null;
+    // Una ruta bloqueada nunca arranca: se vuelve a la navegación libre.
+    if (launchRouteId && !routeOpen(launchRouteId)) launchRouteId = null;
+    setActiveRoute(launchRouteId);
     reset();
     tripId = newRunId();
     tripSaveIn = tripSaveSeconds;
@@ -712,12 +787,23 @@
   }
 
   function finish() {
-    state = 'over';
+    closeTrip(false);
+  }
+
+  function arrive() {
+    closeTrip(true);
+  }
+
+  // Cierra el viaje: por perder las vidas (finish) o por llegar al destino (arrive).
+  function closeTrip(arrived) {
+    state = arrived ? 'arrived' : 'over';
     direction = 0;
     activePointerId = null;
     boat.vx = 0;
+    stageToast.classList.add('hidden');
     const run = { id: tripId || newRunId(), score, lives, pickups: collectedCoins,
-      distance: Math.floor(runDistance * 10) / 10, elapsed: Math.round(elapsed * 10) / 10 };
+      distance: Math.floor(runDistance * 10) / 10, elapsed: Math.round(elapsed * 10) / 10,
+      route: activeRoute ? activeRoute.id : '', arrived: arrived && Boolean(activeRoute) };
     const result = settlePending(run).get(run.id);
     if (result.complete || readPendingRuns().some(item => item.id === run.id)) clearStorageKey(tripKey);
     const rankReward = result.newRanks.reduce((sum, rank) => sum + rank.reward, 0);
@@ -731,9 +817,20 @@
     const warning = result.complete ? ''
       : economyError ? ' No se pueden guardar las monedas: restaura una copia en Ajustes y este viaje se completará.'
       : ' No se pudo guardar todo el progreso. Se reintentará al empezar otro viaje; no desinstales la app.';
-    showOverlay('¡Fin del<br>viaje!',
-      `Lograste ${score} puntos, recogiste ${collectedCoins} monedas flotantes y ${coinMessage}. Tu récord es ${result.best}.${rankMessage}${dailyMessage}${achievementMessage}${warning}`,
-      'Jugar otra vez');
+    if (arrived) {
+      const place = activeRoute.destination;
+      const arrival = result.arrival;
+      const discovery = arrival && arrival.first ? ` ¡Lugar descubierto! +${arrival.reward} monedas de primera visita.` : '';
+      const opened = arrival && arrival.opened.length
+        ? ` Nuevas rutas abiertas: ${arrival.opened.map(id => world.nodeById(id).name).join(', ')}.` : '';
+      showOverlay(`¡Llegaste a<br>${place}!`,
+        `Lograste ${score} puntos y ${coinMessage}.${discovery}${opened} Tu récord es ${result.best}.${rankMessage}${dailyMessage}${achievementMessage}${warning}`,
+        'Navegar otra vez');
+    } else {
+      showOverlay('¡Fin del<br>viaje!',
+        `Lograste ${score} puntos, recogiste ${collectedCoins} monedas flotantes y ${coinMessage}. Tu récord es ${result.best}.${rankMessage}${dailyMessage}${achievementMessage}${warning}`,
+        'Jugar otra vez');
+    }
     showRankToast(result.newRanks);
   }
 
@@ -787,8 +884,9 @@
     if (!source || !validRunId(source.id) || !intWithin(source.score, 1000000) || !intWithin(source.lives, 3) ||
         !intWithin(source.pickups, 100000) || !numberWithin(source.distance, 1000000) ||
         !numberWithin(source.elapsed, 1000000)) return null;
+    const route = typeof source.route === 'string' && world.routeById(source.route) ? source.route : '';
     return { id: source.id, score: source.score, lives: source.lives, pickups: source.pickups,
-      distance: source.distance, elapsed: source.elapsed };
+      distance: source.distance, elapsed: source.elapsed, route, arrived: Boolean(route) && source.arrived === true };
   }
 
   function readTrip() {
@@ -806,7 +904,8 @@
   function persistTrip() {
     if (!tripId || (state !== 'playing' && state !== 'paused') || lives < 1) return false;
     return saveObject(tripKey, { version: 1, id: tripId, score, lives, pickups: collectedCoins,
-      distance: Math.round(runDistance * 10) / 10, elapsed: Math.round(elapsed * 10) / 10 });
+      distance: Math.round(runDistance * 10) / 10, elapsed: Math.round(elapsed * 10) / 10,
+      route: activeRoute ? activeRoute.id : '' });
   }
 
   function readPendingRuns() {
@@ -829,6 +928,9 @@
     const result = { run, earned: tripReward(run.distance, run.score, run.pickups), best: Math.max(run.score, readBest()),
       newRanks: [], newMissions: [], newAchievements: [], economySaved: true, statsSaved: true, bestSaved: true };
     const distance = safeCount(Math.round(run.distance));
+    const route = run.route ? world.routeById(run.route) : null;
+    const arrived = Boolean(route && run.arrived && run.distance >= route.distance);
+    const discoveredBefore = economyError ? 0 : currentView().discovered.size;
     const statsApplied = stats.appliedRuns.includes(run.id);
     const projected = statsApplied ? { ...stats } : {
       runs: Math.min(maxCount, stats.runs + 1), dodged: Math.min(maxCount, stats.dodged + run.score),
@@ -840,9 +942,14 @@
       const view = currentView();
       const today = localDayKey();
       const day = view.lastDay > today ? view.lastDay : today;
-      let next = economyWithEvent({ type: 'earn', amount: result.earned,
-        run: { id: run.id, day, distance, dodged: run.score, pickups: run.pickups } });
+      const record = { id: run.id, day, distance, dodged: run.score, pickups: run.pickups };
+      if (route) record.route = route.id;
+      if (arrived) record.arrived = true;
+      let next = economyWithEvent({ type: 'earn', amount: result.earned, run: record });
       next.appliedRuns = [...(economy.appliedRuns || []), run.id].slice(-maxAppliedRuns);
+      // El premio de la primera visita va en su propio evento: el historial rechaza repetirlo.
+      const firstVisit = arrived && !view.discovered.has(route.to);
+      if (firstVisit) next = economyWithEvent({ type: 'earn', amount: route.reward, discover: route.to }, next);
       const newRanks = ranks.filter(rank => projected.distance >= rank.distance && projected.dodged >= rank.dodged &&
         !view.earnedRanks.has(rank.id));
       for (const rank of newRanks) next = economyWithEvent({ type: 'earn', rank: rank.id, amount: rank.reward }, next);
@@ -855,13 +962,22 @@
       if (saveEconomy(next)) {
         result.newRanks = newRanks;
         result.newMissions = newMissions;
+        if (arrived) {
+          const open = context => world.openIds(context);
+          const after = currentView();
+          const wasOpen = open({ discovered: view.discovered, ranks: view.earnedRanks });
+          result.arrival = { route, first: firstVisit, reward: firstVisit ? route.reward : 0,
+            opened: open({ discovered: after.discovered, ranks: after.earnedRanks }).filter(id => !wasOpen.includes(id)) };
+        }
       } else result.economySaved = false;
     }
     if (!statsApplied) {
-      const before = new Set(achievements.filter(item => stats[item.metric] >= item.target).map(item => item.id));
+      const before = new Set(achievements.filter(item => achievementValue(item, stats, discoveredBefore) >= item.target).map(item => item.id));
       if (saveStats(projected)) {
         Object.assign(stats, projected);
-        result.newAchievements = achievements.filter(item => !before.has(item.id) && stats[item.metric] >= item.target);
+        const discoveredNow = economyError ? 0 : currentView().discovered.size;
+        result.newAchievements = achievements.filter(item => !before.has(item.id) &&
+          achievementValue(item, stats, discoveredNow) >= item.target);
       } else result.statsSaved = false;
     }
     try { localStorage.setItem(bestKey, String(result.best)); }
@@ -894,11 +1010,12 @@
 
   function stageIndexFor(distance) {
     let index = 0;
-    while (index < stages.length - 1 && distance >= stages[index + 1].start) index++;
+    while (index < tripStages.length - 1 && distance >= tripStages[index + 1].start) index++;
     return index;
   }
 
   function restoreTrip(trip) {
+    setActiveRoute(trip.route || null);
     reset();
     tripId = trip.id;
     score = trip.score;
@@ -918,8 +1035,9 @@
 
   function offerInterruptedTrip(trip) {
     interrupted = trip;
+    const route = trip.route ? world.routeById(trip.route) : null;
     showOverlay('Viaje<br>interrumpido',
-      `Tu viaje anterior quedó guardado: ${trip.score} puntos y ${Math.floor(trip.distance)} m. Puedes continuarlo con 3 s de escudo o cobrar lo conseguido.`,
+      `Tu viaje ${route ? `hacia ${route.destination}` : 'anterior'} quedó guardado: ${trip.score} puntos y ${Math.floor(trip.distance)} m. Puedes continuarlo con 3 s de escudo o cobrar lo conseguido.`,
       'Continuar viaje');
   }
 
@@ -934,11 +1052,12 @@
   }
 
   function spawn() {
+    if (activeRoute && activeRoute.distance - runDistance < tune.quietEnd) return;
     const roll = Math.random();
-    const kind = roll < stages[stageIndex].driftChance ? 'drift' : roll < 0.78 ? 'rock' : 'log';
+    const kind = roll < tripStages[stageIndex].driftChance ? 'drift' : roll < tune.rockShare ? 'rock' : 'log';
     const radius = kind === 'rock' ? 19 + Math.random() * 11 : 26;
     obstacles.push({ x: 78 + Math.random() * (width - 156), y: -40, radius, kind,
-      vx: kind === 'drift' ? (Math.random() < 0.5 ? -1 : 1) * (52 + stageIndex * 10) : 0,
+      vx: kind === 'drift' ? (Math.random() < 0.5 ? -1 : 1) * (tune.driftSpeed + stageIndex * tune.driftStageGain) : 0,
       counted: false, hit: false, phase: Math.random() * Math.PI * 2 });
   }
 
@@ -980,8 +1099,8 @@
     boat.lean += ((turnAmount * 0.20 + direction * 0.07) - boat.lean) * Math.min(1, dt * 8);
     const cameraTarget = (boat.x - width / 2) * 0.16;
     cameraX += (cameraTarget - cameraX) * Math.min(1, dt * 4);
-    const targetRiverSpeed = Math.min(390, 190 + elapsed * 3.2 + stageIndex * 15);
-    riverSpeed += Math.min(targetRiverSpeed - riverSpeed, 135 * dt);
+    const targetRiverSpeed = Math.min(tune.speedCap, tune.speedBase + elapsed * tune.speedGrowth + stageIndex * tune.speedStageGain);
+    riverSpeed += Math.min(targetRiverSpeed - riverSpeed, tune.accel * dt);
     runDistance += riverSpeed * dt / 10;
     tripSaveIn -= dt;
     if (tripSaveIn <= 0) {
@@ -989,17 +1108,22 @@
       persistTrip();
     }
     if (tripReward(runDistance, score, collectedCoins) !== hudReward) updateCoinHud();
-    if (stageIndex < stages.length - 1 && runDistance >= stages[stageIndex + 1].start) {
+    if (stageIndex < tripStages.length - 1 && runDistance >= tripStages[stageIndex + 1].start) {
       stageIndex++;
       art.effect('stage', boat.x, boat.y);
       const healed = lives < 3;
       if (healed) lives++;
       shieldTimer = 3;
       updateHud();
-      stageToast.textContent = `¡Tramo ${stageIndex + 1}: ${stages[stageIndex].name}! ${healed ? 'Vida recuperada + ' : ''}Escudo 3 s`;
+      stageToast.textContent = `¡Tramo ${stageIndex + 1}${activeRoute ? `/${tripStages.length}` : ''}: ${tripStages[stageIndex].name}! ${healed ? 'Vida recuperada + ' : ''}Escudo 3 s`;
       stageToast.classList.remove('hidden');
       stageToastTimer = 2.4;
       updateStageHud();
+    }
+    if (activeRoute && runDistance >= activeRoute.distance) {
+      runDistance = activeRoute.distance;
+      arrive();
+      return;
     }
     if (stageToastTimer > 0) {
       stageToastTimer = Math.max(0, stageToastTimer - dt);
@@ -1024,12 +1148,12 @@
     spawnIn -= dt;
     if (spawnIn <= 0) {
       spawn();
-      spawnIn = Math.max(0.44, 1.1 - elapsed * 0.012 - stageIndex * 0.065) + Math.random() * 0.28;
+      spawnIn = Math.max(tune.spawnFloor, tune.spawnBase - elapsed * tune.spawnGrowth - stageIndex * tune.spawnStageGain) + Math.random() * tune.spawnJitter;
     }
     coinSpawnIn -= dt;
     if (coinSpawnIn <= 0) {
       spawnCollectible();
-      coinSpawnIn = 2.6 + Math.random() * 1.1;
+      coinSpawnIn = tune.coinMin + Math.random() * tune.coinJitter;
     }
     for (const coin of collectibles) {
       coin.y += riverSpeed * dt;
@@ -1096,6 +1220,7 @@
     scene.cameraX = cameraX;
     scene.riverSpeed = riverSpeed;
     scene.stageIndex = stageIndex;
+    scene.remaining = remainingMeters();
     scene.quality = profile.quality;
     scene.state = state;
     scene.boat = boat;
@@ -1173,7 +1298,7 @@
     step(dt);
     scene.cameraX = cameraX;
     scene.stageIndex = stageIndex;
-    art.update(dt, state === 'playing' ? riverSpeed : state === 'paused' ? 0 : 60, scene);
+    art.update(dt, state === 'playing' ? riverSpeed : state === 'paused' || state === 'arrived' ? 0 : 60, scene);
     if (rankToastTimer > 0) {
       rankToastTimer = Math.max(0, rankToastTimer - dt);
       if (rankToastTimer === 0) rankToast.classList.add('hidden');
