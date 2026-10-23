@@ -22,6 +22,10 @@
     #stageProgress { width: 0; height: 100%; background: #ffdf85; transition: width .2s linear; }
     #stageToast { position: absolute; top: 23%; left: 8%; right: 8%; padding: 13px; border-radius: 16px; background: #103e4bdc; color: #ffdf85; text-align: center; font-weight: 800; font-size: 19px; pointer-events: none; text-shadow: 0 2px 8px #153a49; }
     #stageToast.hidden { display: none; }
+    #rankToast { position: absolute; z-index: 6; top: 19%; left: 7%; right: 7%; padding: 15px; border: 2px solid #ffe59a; border-radius: 18px; background: #183e4aee; color: #fff4c1; text-align: center; font-size: 19px; font-weight: 800; pointer-events: none; box-shadow: 0 8px 28px #09242caa; animation: rankEnter .35s ease-out; }
+    #rankToast.hidden { display: none; }
+    @keyframes rankEnter { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+    @media (prefers-reduced-motion: reduce) { #rankToast { animation: none; } }
     #overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 26px; background: linear-gradient(#0b2837cb, #0b2837ed); }
     #overlay.hidden { display: none; }
     #overlay h1 { margin: 0; font-size: clamp(38px, 10vw, 58px); line-height: 1; }
@@ -50,9 +54,21 @@
     .statsGrid div { padding: 12px; border-radius: 14px; background: #0b2f3a; }
     .statsGrid strong { display: block; font-size: 21px; color: #ffdd79; }
     .statsGrid small { color: #c8e7e4; }
-    .rankCard { margin-top: 9px; padding: 11px; border-radius: 14px; background: #0b2f3a; }
+    .rankCard { display: flex; align-items: center; gap: 10px; margin-top: 9px; padding: 11px; border-radius: 14px; background: #0b2f3a; }
     .rankCard strong { display: block; color: #ffdd79; }
     .rankCard small { color: #c8e7e4; }
+    .rankBadge { display: grid; flex: none; place-items: center; width: 48px; height: 48px; border-radius: 50%; font-size: 25px; border: 2px solid #ffffff66; box-shadow: inset 0 2px 8px #ffffff55; }
+    .rankCard:not(.unlocked) .rankBadge { opacity: .55; filter: grayscale(.8); }
+    .rankBronze .rankBadge { background: #946343; }
+    .rankSilver .rankBadge { background: #789ba7; }
+    .rankGold .rankBadge { background: #c9a43a; }
+    #rankProgressText { display: block; margin-bottom: 8px; color: #eaf7ec; font-size: 14px; }
+    #rankProgressTrack { height: 9px; overflow: hidden; border-radius: 10px; background: #ffffff30; }
+    #rankProgressFill { width: 0; height: 100%; border-radius: inherit; background: #ffdd79; transition: width .25s ease; }
+    @media (prefers-reduced-motion: reduce) { #rankProgressFill { transition: none; } }
+    .goalCard { margin-top: 9px; padding: 11px; border-radius: 14px; background: #0b2f3a; }
+    .goalCard strong { display: block; color: #ffdd79; }
+    .goalCard small { color: #c8e7e4; }
     #backupText { min-height: 96px; resize: vertical; font: 13px ui-monospace, monospace; }
     .backupActions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
     .backupActions button { min-height: 44px; padding: 10px 14px; border: 1px solid #b2e5df88; border-radius: 12px; background: #0b4b58; color: white; font: 700 14px system-ui, sans-serif; }
@@ -78,6 +94,7 @@
     <div id="stageToast" class="hidden" role="status" aria-live="polite"></div>
     <div id="coinHud">🪙 0</div>
     <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><p id="message">Esquiva las rocas, recoge monedas flotantes y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="play" type="button">¡Jugar!</button><button id="openingSettings" type="button">Ajustes</button></div>
+    <div id="rankToast" class="hidden" role="status" aria-live="polite" aria-atomic="true"></div>
     <section id="settingsPanel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
       <div class="settingsCard">
         <div class="settingsHeader"><h2 id="settingsTitle">Ajustes</h2><button id="closeSettings" type="button">Cerrar</button></div>
@@ -90,14 +107,28 @@
         <div class="statsGrid"><div><strong id="bestScore">0</strong><small>Récord de puntos</small></div><div><strong id="totalRuns">0</strong><small>Viajes terminados</small></div><div><strong id="totalDodged">0</strong><small>Esquivas confirmadas desde 1.7</small></div><div><strong id="totalDistance">0 m</strong><small>Distancia estimada en viajes terminados</small></div><div><strong id="legacyDodged">0</strong><small>Puntos anteriores estimados</small></div></div>
         <h3>Rangos de capitán</h3>
         <p>Acumula distancia y esquivas confirmadas. Al terminar un viaje después de cumplir ambos objetivos, recibirás el rango y su premio una sola vez.</p>
-        <div class="rankCard"><strong>🥉 Explorador</strong><small id="rank-explorer">0/250 m · 0/3 esquivas · premio +10 🪙</small></div>
-        <div class="rankCard"><strong>🥈 Navegante</strong><small id="rank-navigator">0/800 m · 0/15 esquivas · premio +20 🪙</small></div>
-        <div class="rankCard"><strong>🥇 Capitán del río</strong><small id="rank-captain">0/2000 m · 0/40 esquivas · premio +40 🪙</small></div>
+        <span id="rankProgressText">Siguiente: 🥉 Explorador · 0/250 m · 0/3 esquivas</span><div id="rankProgressTrack" role="progressbar" aria-label="Progreso hacia el siguiente rango" aria-describedby="rankProgressText" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="rankProgressFill"></div></div>
+        <div id="rank-card-explorer" class="rankCard rankBronze"><span class="rankBadge" aria-hidden="true">🥉</span><div><strong>Explorador</strong><small id="rank-explorer">0/250 m · 0/3 esquivas · premio +10 🪙</small></div></div>
+        <div id="rank-card-navigator" class="rankCard rankSilver"><span class="rankBadge" aria-hidden="true">🥈</span><div><strong>Navegante</strong><small id="rank-navigator">0/800 m · 0/15 esquivas · premio +20 🪙</small></div></div>
+        <div id="rank-card-captain" class="rankCard rankGold"><span class="rankBadge" aria-hidden="true">🥇</span><div><strong>Capitán del río</strong><small id="rank-captain">0/2000 m · 0/40 esquivas · premio +40 🪙</small></div></div>
+        <h3>Misiones diarias</h3>
+        <p id="dailyDate">Las misiones se registran al terminar viajes. Sus premios se cobran automáticamente una vez por día.</p>
+        <div class="goalCard"><strong>🌊 Recorre 150 m</strong><small id="daily-distance">0/150 · premio +5 🪙</small></div>
+        <div class="goalCard"><strong>🪨 Esquiva 4 obstáculos</strong><small id="daily-dodged">0/4 · premio +6 🪙</small></div>
+        <div class="goalCard"><strong>🪙 Recoge 2 monedas flotantes</strong><small id="daily-pickups">0/2 · premio +4 🪙</small></div>
+        <h3>Logros permanentes</h3>
+        <p>Se desbloquean con estadísticas guardadas; no son logros de Google Play Games.</p>
+        <div class="goalCard"><strong>🚤 Primer viaje</strong><small id="achievement-first">0/1</small></div>
+        <div class="goalCard"><strong>🧭 Remero constante · 10 viajes</strong><small id="achievement-regular">0/10</small></div>
+        <div class="goalCard"><strong>🪨 Esquivador · 25 esquivas</strong><small id="achievement-dodger">0/25</small></div>
+        <div class="goalCard"><strong>🌊 Viajero del río · 1500 m</strong><small id="achievement-traveler">0/1500</small></div>
         <h3>Tienda y garaje</h3>
-        <p>Saldo: <span id="garageCoins">0 monedas</span>. Gana monedas al terminar viajes y suma tres extra por cada moneda flotante recogida. Las lanchas solo cambian de color, no dan ventaja.</p>
+        <p>Saldo: <span id="garageCoins">0 monedas</span>. Gana monedas al terminar viajes, con monedas flotantes y misiones. Las lanchas solo cambian de color, no dan ventaja.</p>
         <div class="boatCard"><div><strong>🚤 Clásica</strong><small>Incluida</small></div><button id="boat-classic" type="button">Equipada</button></div>
         <div class="boatCard"><div><strong>🛥️ Coral</strong><small>15 monedas</small></div><button id="boat-coral" type="button">Comprar</button></div>
         <div class="boatCard"><div><strong>⛵ Tormenta</strong><small>45 monedas</small></div><button id="boat-storm" type="button">Comprar</button></div>
+        <div class="boatCard"><div><strong>🌿 Brisa</strong><small>Se desbloquea con Explorador</small></div><button id="boat-breeze" type="button" disabled>Requiere Explorador</button></div>
+        <div class="boatCard"><div><strong>✨ Aurora</strong><small>Se desbloquea con Capitán del río</small></div><button id="boat-aurora" type="button" disabled>Requiere Capitán del río</button></div>
         <div id="garageNotice" role="status" aria-live="polite"></div>
         <h3>Gráficos</h3>
         <label for="quality">Calidad visual</label><select id="quality"><option value="high">Alta: todos los efectos</option><option value="low">Reducida: menos efectos y hasta 30 FPS</option></select>
