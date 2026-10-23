@@ -571,3 +571,5 @@ require('./map-ui.cjs');
 require('./themes.cjs');
 require('./sea.cjs');
 require('./sea-game.cjs');
+require('./quests.cjs');
+require('./quest-game.cjs');

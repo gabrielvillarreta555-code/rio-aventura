@@ -8,8 +8,8 @@ android {
         applicationId = "com.example.rioaventura"
         minSdk = 26
         targetSdk = 35
-        versionCode = 18
-        versionName = "2.6"
+        versionCode = 19
+        versionName = "2.7"
     }
 
     compileOptions {

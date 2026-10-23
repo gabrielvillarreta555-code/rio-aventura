@@ -136,6 +136,32 @@
     #seaBrake { position: absolute; z-index: 2; right: 16px; bottom: max(70px, calc(env(safe-area-inset-bottom) + 62px)); width: 84px; height: 84px; border-radius: 50%; border: 3px solid rgba(255,255,255,.85); background: radial-gradient(circle at 35% 30%, #ff9a8a, #d8483f 70%); color: white; font: 800 14px system-ui, sans-serif; box-shadow: 0 8px 16px rgba(0,36,48,.5); touch-action: none; user-select: none; -webkit-user-select: none; }
     #seaBrake:active { transform: scale(.94); background: radial-gradient(circle at 35% 30%, #ffb4a6, #b8362e 70%); }
     #seaHint { position: absolute; z-index: 2; left: 16px; right: 16px; bottom: max(150px, calc(env(safe-area-inset-bottom) + 142px)); padding: 10px 14px; border-radius: 14px; background: #183e4aee; border: 1px solid #ffe59a; color: #fff4c1; text-align: center; font: 700 15px system-ui, sans-serif; pointer-events: none; }
+    #talk { margin-top: 14px; min-height: 48px; padding: 12px 26px; border: 1px solid rgba(255,226,140,.65); border-radius: 16px; background: linear-gradient(180deg, rgba(20,118,134,.92), rgba(8,70,92,.94)); color: #ffe58a; font: 800 18px system-ui, sans-serif; box-shadow: 0 6px 14px rgba(0,36,48,.35), inset 0 1px 0 rgba(255,255,255,.3); }
+    #talk.hidden, #deliveryCard.hidden, #questHud.hidden, #dialogPanel.hidden { display: none; }
+    #deliveryCard { margin: 10px 0 2px; padding: 12px 16px; max-width: 330px; border: 2px solid #9af0b4; border-radius: 18px; background: linear-gradient(180deg, rgba(18,112,96,.95), rgba(8,70,68,.97)); box-shadow: 0 10px 26px rgba(0,36,48,.45); animation: toastEnter .45s ease-out; text-align: left; }
+    #deliveryCard strong { display: block; color: #c9ffd8; font-size: 18px; text-align: center; }
+    #deliveryCard span { display: block; margin-top: 5px; color: #f0fffb; font-size: 14px; line-height: 1.35; }
+    #questHud { position: absolute; z-index: 2; left: 16px; top: calc(max(18px, env(safe-area-inset-top)) + 108px); width: calc(100% - 140px); max-width: 360px; padding: 7px 10px; border-radius: 12px; background: rgba(8,58,78,.82); border: 1px solid rgba(154,240,180,.5); font: 700 12px system-ui, sans-serif; line-height: 1.4; pointer-events: none; text-shadow: 0 2px 4px rgba(0,36,48,.6); }
+    #dialogPanel { position: absolute; z-index: 6; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding: max(16px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); background: rgba(4,32,44,.72); overflow-y: auto; }
+    .dialogCard { width: min(100%, 520px); max-height: 100%; overflow-y: auto; padding: 16px; border: 1px solid rgba(255,226,140,.55); border-radius: 22px; background: linear-gradient(180deg, #14566a, #0a3a4e); box-shadow: 0 16px 40px rgba(0,26,34,.6); }
+    .dialogHead { display: flex; align-items: center; gap: 12px; }
+    #dialogPortrait { display: grid; flex: none; place-items: center; width: 62px; height: 62px; border-radius: 50%; background: #ffdd79; font-size: 34px; border: 3px solid #fff3c0; }
+    .dialogHead h2 { margin: 0; font-size: 20px; color: #ffe58a; }
+    .dialogHead small { display: block; color: #c8e7e4; }
+    #closeDialog { margin-left: auto; min-height: 44px; padding: 8px 14px; border: 0; border-radius: 12px; background: #ffdd79; color: #18353a; font: 800 15px system-ui, sans-serif; }
+    #dialogText { margin: 12px 0; padding: 12px 14px; border-radius: 14px; background: #0b2f3a; font-size: 16px; line-height: 1.45; color: #f0fffb; }
+    .offerCard { margin-top: 9px; padding: 11px; border-radius: 14px; background: #0b2f3a; border: 1px solid rgba(255,255,255,.12); }
+    .offerCard.hidden { display: none; }
+    .offerCard strong { display: block; color: #ffdd79; }
+    .offerCard small { display: block; margin-top: 3px; color: #c8e7e4; line-height: 1.35; }
+    .offerCard .offerState { color: #9af0b4; font-weight: 700; }
+    .offerButtons { display: flex; gap: 8px; margin-top: 9px; }
+    .offerButtons button { flex: 1; min-height: 46px; padding: 8px; border: 0; border-radius: 12px; font: 800 15px system-ui, sans-serif; }
+    .offerButtons .accept { background: linear-gradient(180deg, #fff0a8, #ffcf4a 55%, #ffb82e); color: #3a2308; }
+    .offerButtons .decline { background: #2a5a68; color: white; }
+    .offerButtons button:disabled { background: #6f8a8c; color: #1e3438; opacity: .8; }
+    .dialogFoot { display: flex; gap: 8px; margin-top: 12px; }
+    .dialogFoot button { flex: 1; min-height: 46px; padding: 8px; border: 1px solid rgba(190,255,240,.5); border-radius: 12px; background: #0b4b58; color: white; font: 700 15px system-ui, sans-serif; }
     #hint { position: absolute; bottom: max(24px, env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 14px; font-weight: 700; color: #efffff; text-shadow: 0 2px 8px #153a49; pointer-events: none; }
   </style>
 </head>
@@ -146,7 +172,7 @@
     <div id="stageHud" aria-live="off"><div id="stageHudText"><span id="stageLabel">Tramo 1 · Orillas tranquilas</span><span id="stageDistance">0 / 100 m</span></div><div id="stageTrack"><div id="stageProgress"></div></div></div>
     <div id="stageToast" class="hidden" role="status" aria-live="polite"></div>
     <div id="coinHud">🪙 0</div>
-    <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><div id="arrivalCard" class="hidden" role="status" aria-live="polite"><strong id="arrivalTitle"></strong><span id="arrivalText"></span></div><p id="message">Esquiva las rocas, recoge monedas flotantes y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="exploreSea" type="button">⛵ Explorar el mundo</button><button id="play" type="button">¡Jugar!</button><button id="exitSea" type="button" class="hidden">Salir al menú</button><button id="openMap" type="button">🗺️ Abrir el mapa</button><button id="finishTrip" type="button" class="hidden">Cobrar y empezar de nuevo</button><button id="openingSettings" type="button">Ajustes</button></div>
+    <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><div id="arrivalCard" class="hidden" role="status" aria-live="polite"><strong id="arrivalTitle"></strong><span id="arrivalText"></span></div><div id="deliveryCard" class="hidden" role="status" aria-live="polite"><strong id="deliveryTitle"></strong><span id="deliveryText"></span></div><p id="message">Esquiva las rocas, recoge monedas flotantes y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="talk" type="button" class="hidden">💬 Hablar</button><button id="exploreSea" type="button">⛵ Explorar el mundo</button><button id="play" type="button">¡Jugar!</button><button id="exitSea" type="button" class="hidden">Salir al menú</button><button id="openMap" type="button">🗺️ Abrir el mapa</button><button id="finishTrip" type="button" class="hidden">Cobrar y empezar de nuevo</button><button id="openingSettings" type="button">Ajustes</button></div>
     <div id="rankToast" class="hidden" role="status" aria-live="polite" aria-atomic="true"></div>
     <section id="mapPanel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mapTitle">
       <canvas id="mapCanvas" width="450" height="800" aria-hidden="true"></canvas>
@@ -203,6 +229,15 @@
         <div class="goalCard passportCard"><strong>🌊 Cascada Brumosa</strong><small id="passport-cascada">Sin descubrir</small></div>
         <div class="goalCard passportCard"><strong>🏛️ Ruinas del Sol</strong><small id="passport-ruinas">Sin descubrir</small></div>
         <div class="goalCard passportCard"><strong>✨ Laguna de las Luciérnagas</strong><small id="passport-laguna">Sin descubrir</small></div>
+        <h3>Libreta de encargos</h3>
+        <p>Entrega mercancías y pasajeros atracando en el muelle de destino. Cada entrega suma reputación con quien la ofreció; la reputación da primas y abre encargos mejores.</p>
+        <div class="goalCard"><strong>📦 Entregas realizadas</strong><small id="quest-total">0</small></div>
+        <div class="goalCard"><strong>🧑‍✈️ Capitana Marisol</strong><small id="rep-puerto">Sin reputación</small></div>
+        <div class="goalCard"><strong>🧔 Tomás el Pescador</strong><small id="rep-aldea">Sin reputación</small></div>
+        <div class="goalCard"><strong>👵 Abuela Raíz</strong><small id="rep-manglar">Sin reputación</small></div>
+        <div class="goalCard"><strong>👩‍🔧 Ingeniera Lía</strong><small id="rep-cascada">Sin reputación</small></div>
+        <div class="goalCard"><strong>🧐 Profesor Quillay</strong><small id="rep-ruinas">Sin reputación</small></div>
+        <div class="goalCard"><strong>🧙‍♀️ Luciana la Farera</strong><small id="rep-laguna">Sin reputación</small></div>
         <h3>Tienda y garaje</h3>
         <p>Saldo: <span id="garageCoins">0 monedas</span>. Gana monedas al terminar viajes, con monedas flotantes y misiones. Las lanchas solo cambian de color, no dan ventaja.</p>
         <div class="boatCard"><div><strong>🚤 Clásica</strong><small>Incluida</small></div><button id="boat-classic" type="button">Equipada</button></div>
@@ -225,6 +260,20 @@
     <canvas id="seaMap" class="hidden" width="128" height="128" aria-hidden="true"></canvas>
     <div id="joy" class="hidden" aria-hidden="true"><div id="joyKnob"></div></div>
     <button id="seaBrake" class="hidden" type="button" aria-label="Freno">FRENO</button>
+    <div id="questHud" class="hidden" aria-live="off"></div>
+    <section id="dialogPanel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="dialogName">
+      <div class="dialogCard">
+        <div class="dialogHead"><span id="dialogPortrait" aria-hidden="true">🙂</span><div><h2 id="dialogName">Personaje</h2><small id="dialogRole"></small><small id="dialogRep"></small></div><button id="closeDialog" type="button">Cerrar</button></div>
+        <p id="dialogText"></p>
+        <div id="dialogActive"></div>
+        <div id="dialogOffers">
+          <div id="offer-0" class="offerCard hidden"><strong id="offerTitle-0"></strong><small id="offerInfo-0"></small><small id="offerState-0" class="offerState"></small><div class="offerButtons"><button id="offerAccept-0" class="accept" type="button">Aceptar</button><button id="offerDecline-0" class="decline" type="button">Rechazar</button></div></div>
+          <div id="offer-1" class="offerCard hidden"><strong id="offerTitle-1"></strong><small id="offerInfo-1"></small><small id="offerState-1" class="offerState"></small><div class="offerButtons"><button id="offerAccept-1" class="accept" type="button">Aceptar</button><button id="offerDecline-1" class="decline" type="button">Rechazar</button></div></div>
+          <div id="offer-2" class="offerCard hidden"><strong id="offerTitle-2"></strong><small id="offerInfo-2"></small><small id="offerState-2" class="offerState"></small><div class="offerButtons"><button id="offerAccept-2" class="accept" type="button">Aceptar</button><button id="offerDecline-2" class="decline" type="button">Rechazar</button></div></div>
+        </div>
+        <div class="dialogFoot"><button id="dialogChat" type="button">💬 Charlar</button></div>
+      </div>
+    </section>
     <div id="seaHint" class="hidden" role="status" aria-live="polite"></div>
     <div id="hint">← Mantén pulsado para remar →</div>
   </main>
@@ -233,6 +282,7 @@
   <script src="art-themes.js"></script>
   <script src="sea.js"></script>
   <script src="sea-view.js"></script>
+  <script src="quests.js"></script>
   <script src="map.js"></script>
   <script src="game.js"></script>
 </body>

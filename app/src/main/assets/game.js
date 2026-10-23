@@ -48,6 +48,10 @@
   const joyKnob = document.getElementById('joyKnob');
   const brakeButton = document.getElementById('seaBrake');
   const seaHint = document.getElementById('seaHint');
+  const talkButton = document.getElementById('talk');
+  const deliveryCard = document.getElementById('deliveryCard');
+  const questHud = document.getElementById('questHud');
+  const dialogPanel = document.getElementById('dialogPanel');
   const stageEl = document.getElementById('stage');
   const hintEl = document.getElementById('hint');
   const titleMessage = message.textContent;
@@ -65,6 +69,9 @@
   const economyBackupFormat = 'rio-aventura-progress-v2';
   const compactBackupFormat = 'rio-aventura-progress-v3';
   const worldBackupFormat = 'rio-aventura-progress-v4';
+  const questBackupFormat = 'rio-aventura-progress-v5';
+  const quests = window.RioQuests;
+  const maxQuestIds = 60;
   const maxEventAmount = 200;
   const tripKey = 'rio-aventura-trip-v1';
   const settleKey = 'rio-aventura-settle-v1';
@@ -145,9 +152,18 @@
   let seaWakeAt = 0;
   let seaHintText = '';
   let joyPointer = null;
+  // Encargos: los activos (máximo 2) viajan con la partida; lo cumplido vive en el historial de monedas.
+  let seaQuests = [];
+  let seaDockMark = {};
+  let seaDockedAt = '';
+  let seaBumpCool = 0;
+  let seaToastIn = 0;
+  let dialogDock = '';
+  let dialogChat = 0;
+  const questDeclined = new Set();
   let joyOrigin = { x: 0, y: 0 };
   const seaInput = { x: 0, y: 0, brake: false };
-  const seaFrameState = { cam: null, boat: null, boatStyle: null, taken: [], wake: [], dockStatus: {}, shield: false };
+  const seaFrameState = { cam: null, boat: null, boatStyle: null, taken: [], wake: [], dockStatus: {}, dockMark: {}, shield: false };
   let seaMapCtx = null;
   const seaKeys = { up: false, down: false, left: false, right: false };
   let mapSelected = 'puerto';
@@ -279,6 +295,9 @@
     const seen = new Set();
     const discovered = new Set();
     const arrivals = new Map();
+    const reputation = new Map();
+    const deliveries = new Map();
+    const questIds = new Set();
     let lastDay = '';
     let coins = 0;
     if (base) {
@@ -290,6 +309,9 @@
       for (const day of Object.keys(base.daily)) dailyProgress.set(day, { ...base.daily[day] });
       for (const id of base.discovered) discovered.add(id);
       for (const id of Object.keys(base.arrivals)) arrivals.set(id, base.arrivals[id]);
+      for (const id of Object.keys(base.reputation || {})) reputation.set(id, base.reputation[id]);
+      for (const id of Object.keys(base.deliveries || {})) deliveries.set(id, base.deliveries[id]);
+      for (const id of base.questIds || []) questIds.add(id);
     }
     for (const event of events) {
       if (!event || typeof event.id !== 'string' || !idPattern.test(event.id) || seen.has(event.id)) return null;
@@ -298,10 +320,11 @@
         const hasRank = Object.prototype.hasOwnProperty.call(event, 'rank');
         const hasRun = Object.prototype.hasOwnProperty.call(event, 'run');
         const hasDiscover = Object.prototype.hasOwnProperty.call(event, 'discover');
+        const hasQuest = Object.prototype.hasOwnProperty.call(event, 'quest');
         const hasDaily = Object.prototype.hasOwnProperty.call(event, 'dailyDay') ||
           Object.prototype.hasOwnProperty.call(event, 'dailyMission');
-        if (Number(hasRank) + Number(hasRun) + Number(hasDaily) + Number(hasDiscover) > 1) return null;
-        if (!hasDiscover && event.amount > 80) return null;
+        if (Number(hasRank) + Number(hasRun) + Number(hasDaily) + Number(hasDiscover) + Number(hasQuest) > 1) return null;
+        if (!hasDiscover && !hasQuest && event.amount > 80) return null;
         if (hasRank) {
           const rank = ranks.find(item => item.id === event.rank);
           if (!rank || event.amount !== rank.reward || earnedRanks.has(rank.id)) return null;
@@ -324,6 +347,15 @@
           // Un destino solo se descubre una vez: la repetición haría inválido el historial.
           if (!world.validId(event.discover) || discovered.has(event.discover)) return null;
           discovered.add(event.discover);
+        } else if (hasQuest) {
+          // Cada entrega es única: su identificador no puede repetirse, ni pagarse dos veces.
+          const quest = event.quest;
+          if (!quest || typeof quest !== 'object' || !validRunId(quest.id) || !quests.validTemplateId(quest.tpl) ||
+              !world.validId(quest.giver) || !world.validId(quest.to) || quest.giver === quest.to || questIds.has(quest.id)) return null;
+          questIds.add(quest.id);
+          const firstTime = !deliveries.has(quest.tpl);
+          deliveries.set(quest.tpl, (deliveries.get(quest.tpl) || 0) + 1);
+          reputation.set(quest.giver, Math.min(quests.maxRep, (reputation.get(quest.giver) || 0) + quests.repGain(firstTime)));
         } else if (hasDaily) {
           const mission = dailyMissions.find(item => item.id === event.dailyMission);
           const claimKey = `${event.dailyDay}:${event.dailyMission}`;
@@ -346,7 +378,7 @@
     for (const boatOption of boats) {
       if (boatOption.unlockRank && earnedRanks.has(boatOption.unlockRank)) owned.add(boatOption.id);
     }
-    return { coins, owned, earnedRanks, dailyProgress, claimedMissions, lastDay, discovered, arrivals };
+    return { coins, owned, earnedRanks, dailyProgress, claimedMissions, lastDay, discovered, arrivals, reputation, deliveries, questIds };
   }
 
   function validateBase(base) {
@@ -367,6 +399,14 @@
     if (!Array.isArray(found) || !unique(found) || found.length > 64 || !found.every(id => world.validId(id)) ||
         !visits || typeof visits !== 'object' || Array.isArray(visits) || Object.keys(visits).length > 64 ||
         !Object.keys(visits).every(id => world.validId(id) && count(visits[id]))) return null;
+    const standing = base.reputation === undefined ? {} : base.reputation;
+    const done = base.deliveries === undefined ? {} : base.deliveries;
+    const paid = base.questIds === undefined ? [] : base.questIds;
+    if (!standing || typeof standing !== 'object' || Array.isArray(standing) || Object.keys(standing).length > 64 ||
+        !Object.keys(standing).every(id => world.validId(id) && Number.isInteger(standing[id]) && standing[id] >= 0 && standing[id] <= quests.maxRep) ||
+        !done || typeof done !== 'object' || Array.isArray(done) || Object.keys(done).length > 128 ||
+        !Object.keys(done).every(id => quests.validTemplateId(id) && count(done[id])) ||
+        !Array.isArray(paid) || !unique(paid) || paid.length > maxQuestIds || !paid.every(validRunId)) return null;
     const days = Object.keys(base.daily);
     if (days.length > maxDays || !days.every(day => validDayKey(day) && base.daily[day] &&
         ['distance', 'dodged', 'pickups'].every(key => count(base.daily[day][key])))) return null;
@@ -380,7 +420,7 @@
     }
     return { count: base.count, hash: base.hash, marks: base.marks.map(mark => ({ count: mark.count, hash: mark.hash })),
       coins: base.coins, owned: [...base.owned], ranks: [...base.ranks], lastDay: base.lastDay, daily, claimed: [...base.claimed],
-      discovered: [...found], arrivals: { ...visits } };
+      discovered: [...found], arrivals: { ...visits }, reputation: { ...standing }, deliveries: { ...done }, questIds: [...paid] };
   }
 
   // Un historial usa el formato 3 en cuanto contiene destinos descubiertos o viajes con ruta:
@@ -391,12 +431,24 @@
     return value.events.some(event => event && (event.discover !== undefined || (event.run && event.run.route !== undefined)));
   }
 
+  // Los encargos usan el formato 4: la versión anterior lo rechaza sin dañarlo.
+  function usesQuests(value) {
+    const base = value.base;
+    if (base && ((base.reputation && Object.keys(base.reputation).length) || (base.deliveries && Object.keys(base.deliveries).length) ||
+        (base.questIds && base.questIds.length))) return true;
+    return value.events.some(event => event && event.quest !== undefined);
+  }
+
+  function neededVersion(value) {
+    return usesQuests(value) ? 4 : usesWorld(value) ? 3 : 2;
+  }
+
   function validateEconomy(value) {
-    if (!value || (value.version !== 1 && value.version !== 2 && value.version !== 3) || typeof value.deviceId !== 'string' ||
+    if (!value || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4) || typeof value.deviceId !== 'string' ||
         !idPattern.test(value.deviceId) || !Number.isInteger(value.nextEvent) || value.nextEvent < 1 ||
         !Array.isArray(value.events) || (value.appliedRuns !== undefined && !validRunList(value.appliedRuns))) return null;
     let base = null;
-    if (value.version === 2 || (value.version === 3 && value.base !== undefined)) {
+    if (value.version === 2 || (value.version >= 3 && value.base !== undefined)) {
       base = validateBase(value.base);
       if (!base || value.events.length > maxTailEvents) return null;
     } else if (value.base !== undefined || value.events.length > maxLegacyEvents) return null;
@@ -417,6 +469,9 @@
     if (a.discovered.size !== b.discovered.size || a.arrivals.size !== b.arrivals.size) return false;
     for (const id of a.discovered) if (!b.discovered.has(id)) return false;
     for (const [id, visitCount] of a.arrivals) if (b.arrivals.get(id) !== visitCount) return false;
+    if (a.reputation.size !== b.reputation.size || a.deliveries.size !== b.deliveries.size) return false;
+    for (const [id, points] of a.reputation) if (b.reputation.get(id) !== points) return false;
+    for (const [id, times] of a.deliveries) if (b.deliveries.get(id) !== times) return false;
     if (JSON.stringify(a.dailyProgress.get(a.lastDay) || null) !== JSON.stringify(b.dailyProgress.get(b.lastDay) || null)) return false;
     return dailyMissions.every(mission =>
       a.claimedMissions.has(`${a.lastDay}:${mission.id}`) === b.claimedMissions.has(`${b.lastDay}:${mission.id}`));
@@ -448,9 +503,11 @@
       ranks: ranks.filter(item => summary.earnedRanks.has(item.id)).map(item => item.id),
       lastDay: summary.lastDay, daily,
       claimed: [...summary.claimedMissions].filter(key => recentDays.includes(key.slice(0, 10))),
-      discovered: [...summary.discovered], arrivals: Object.fromEntries(summary.arrivals)
+      discovered: [...summary.discovered], arrivals: Object.fromEntries(summary.arrivals),
+      reputation: Object.fromEntries(summary.reputation), deliveries: Object.fromEntries(summary.deliveries),
+      questIds: [...summary.questIds].slice(-maxQuestIds)
     } };
-    candidate.version = usesWorld(candidate) ? 3 : 2;
+    candidate.version = neededVersion(candidate);
     const after = validateEconomy(candidate);
     const afterView = after && replayEconomy(after.events, after.base);
     return afterView && sameEconomyState(before, afterView) ? after : value;
@@ -503,7 +560,8 @@
   function saveEconomy(next, allowRecovery = false) {
     if (economyError && !allowRecovery) return false;
     let compact = compactEconomy(next);
-    if (compact.version < 3 && usesWorld(compact)) compact = { ...compact, version: 3 };
+    const needed = usesQuests(compact) ? 4 : usesWorld(compact) ? 3 : 0;
+    if (compact.version < needed) compact = { ...compact, version: needed };
     if (!validateEconomy(compact) || !saveObject(economyKey, compact)) return false;
     for (const key of Object.keys(economy)) if (!(key in compact)) delete economy[key];
     Object.assign(economy, compact);
@@ -691,7 +749,7 @@
 
   function exportBackup() {
     return JSON.stringify({
-      format: economy.version === 3 ? worldBackupFormat : economy.version === 2 ? compactBackupFormat : economyBackupFormat,
+      format: economy.version === 4 ? questBackupFormat : economy.version === 3 ? worldBackupFormat : economy.version === 2 ? compactBackupFormat : economyBackupFormat,
       profile: { ...profile },
       best: readBest(),
       stats: { ...stats },
@@ -703,7 +761,7 @@
     if (text.length > 3000000) return null;
     let backup;
     try { backup = JSON.parse(text); } catch (_) { return null; }
-    if (!backup || ![backupFormat, economyBackupFormat, compactBackupFormat, worldBackupFormat].includes(backup.format) ||
+    if (!backup || ![backupFormat, economyBackupFormat, compactBackupFormat, worldBackupFormat, questBackupFormat].includes(backup.format) ||
         !backup.profile || !backup.stats) return null;
     const { name, avatar, quality } = backup.profile;
     if (typeof name !== 'string' || !name.trim() || name.length > 18 ||
@@ -736,6 +794,7 @@
     updateRankView();
     updateDailyView();
     updateAchievementView();
+    updateQuestBook();
   }
 
   function updateProfileBadge() {
@@ -834,6 +893,8 @@
     if (interrupted) finishTripButton.classList.remove('hidden');
     else finishTripButton.classList.add('hidden');
     arrivalCard.classList.add('hidden');
+    deliveryCard.classList.add('hidden');
+    talkButton.classList.add('hidden');
     // El mapa solo se abre entre viajes: no con un viaje en pausa ni uno por retomar.
     openMapButton.classList.toggle('hidden', mode === 'sea' || Boolean(interrupted) || state === 'paused');
     exploreSeaButton.classList.toggle('hidden', mode === 'sea' || Boolean(interrupted) || state === 'paused');
@@ -1597,6 +1658,7 @@
   mapHint.addEventListener('click', dismissMapHint);
   // Botón «atrás» de Android: MainActivity lo llama; devuelve true si el juego lo atendió.
   window.rioAventuraBack = () => {
+    if (dialogDock) { closeDialog(); return true; }
     if (mapOpen) { closeMap(); return true; }
     if (settingsReturnState !== null) { closeSettings(); return true; }
     if (state === 'playing') { pauseTrip(); return true; }
@@ -1612,6 +1674,17 @@
   function refreshSeaStatus() {
     for (const dock of seaWorld.docks) {
       seaDockStatus[dock.id] = dock.kind === 'port' ? 'open' : nodeState(world.nodeById(dock.id));
+    }
+    refreshDockMarks();
+  }
+
+  // 2 = hay una entrega para este muelle; 1 = su personaje tiene un encargo que puedes aceptar.
+  function refreshDockMarks() {
+    for (const dock of seaWorld.docks) {
+      let mark = 0;
+      if (seaQuests.some(q => quests.template(q.tpl).to === dock.id)) mark = 2;
+      else if (seaDockStatus[dock.id] !== 'locked' && quests.offersFor(dock.id).some(item => offerStatus(item).canAccept)) mark = 1;
+      seaDockMark[dock.id] = mark;
     }
   }
 
@@ -1636,7 +1709,14 @@
       trip.elapsed = inRange(saved.elapsed, 1e6) ? saved.elapsed : 0;
       for (const id of ids(saved.passed, seaWorld.rocks.length)) trip.passed.add(id);
     }
-    return { x: saved.x, y: saved.y, h: saved.h, trip, taken: trip.id === saved.id ? ids(saved.taken, seaWorld.coins.length) : [] };
+    // Los encargos guardados se validan: plantilla conocida, sin repetirse y sin estar ya cobrados.
+    const active = [];
+    for (const item of Array.isArray(saved.quests) ? saved.quests.slice(0, quests.maxActive) : []) {
+      if (!item || !validRunId(item.id) || !quests.template(item.tpl) || !inRange(item.t, 1e6) || !intWithin(item.bumps, 99)) continue;
+      if (active.some(q => q.id === item.id || q.tpl === item.tpl) || (!economyError && currentView().questIds.has(item.id))) continue;
+      active.push({ id: item.id, tpl: item.tpl, t: item.t, bumps: item.bumps });
+    }
+    return { x: saved.x, y: saved.y, h: saved.h, trip, quests: active, taken: trip.id === saved.id ? ids(saved.taken, seaWorld.coins.length) : [] };
   }
 
   let seaSavedText = '';
@@ -1645,7 +1725,8 @@
     const snapshot = { version: 1, x: Math.round(seaBoat.x * 10) / 10, y: Math.round(seaBoat.y * 10) / 10,
       h: Math.round(seaBoat.heading * 1000) / 1000, id: seaTrip.id, dist: Math.round(seaTrip.dist * 10) / 10,
       pickups: seaTrip.pickups, score: seaTrip.score, elapsed: Math.round(seaTrip.elapsed * 10) / 10,
-      passed: [...seaTrip.passed], taken: seaTaken.flatMap((value, id) => value ? [id] : []) };
+      passed: [...seaTrip.passed], taken: seaTaken.flatMap((value, id) => value ? [id] : []),
+      quests: seaQuests.map(q => ({ id: q.id, tpl: q.tpl, t: Math.round(q.t * 10) / 10, bumps: q.bumps })) };
     // Parado no hay nada nuevo que escribir: se evita tocar el almacenamiento (es síncrono en WebView).
     const text = JSON.stringify(snapshot);
     if (text === seaSavedText) return true;
@@ -1689,6 +1770,10 @@
     seaTrip = saved ? saved.trip : freshSeaTrip();
     seaTaken = [];
     if (saved) for (const id of saved.taken) seaTaken[id] = true;
+    seaQuests = saved ? saved.quests : [];
+    seaBumpCool = 0;
+    seaDockedAt = '';
+    questDeclined.clear();
     seaWake = [];
     for (let i = 0; i < 24; i++) seaWake.push({ x: 0, y: 0, age: 1, life: 1, size: 1 });
     seaInput.x = 0; seaInput.y = 0; seaInput.brake = false;
@@ -1711,7 +1796,9 @@
 
   function exitSea() {
     if (mode !== 'sea') return;
+    closeDialog();
     persistSea();
+    questHud.classList.add('hidden');
     mode = 'classic';
     seaSetUi(false);
     seaInput.x = 0; seaInput.y = 0; seaInput.brake = false; joyPointer = null;
@@ -1726,6 +1813,7 @@
 
   function resumeSea() {
     state = 'playing';
+    seaDockedAt = '';
     seaControls(true);
     seaDockWait = 0;
     overlay.classList.add('hidden');
@@ -1748,10 +1836,17 @@
     scoreEl.textContent = `🪙 ${seaTrip.pickups} · ${Math.floor(seaTrip.dist)} m`;
     livesEl.textContent = `🧭 ${found}/${world.destinations.length}`;
     let target = null;
-    for (const dock of seaWorld.docks) {
-      if (seaDockStatus[dock.id] !== 'open' || dock.kind === 'port') continue;
-      const d = Math.hypot(dock.x - seaBoat.x, dock.y - seaBoat.y);
-      if (!target || d < target.d) target = { dock, d };
+    const deliver = seaQuests.map(q => ({ q, dock: seaWorld.docks.find(d => d.id === quests.template(q.tpl).to) }));
+    for (const item of deliver) {
+      const d = Math.hypot(item.dock.x - seaBoat.x, item.dock.y - seaBoat.y);
+      if (!target || d < target.d) target = { dock: item.dock, d, quest: item.q };
+    }
+    if (!target) {
+      for (const dock of seaWorld.docks) {
+        if (seaDockStatus[dock.id] !== 'open' || dock.kind === 'port') continue;
+        const d = Math.hypot(dock.x - seaBoat.x, dock.y - seaBoat.y);
+        if (!target || d < target.d) target = { dock, d };
+      }
     }
     if (!target) {
       const home = seaWorld.docks[0];
@@ -1759,9 +1854,23 @@
     }
     const angle = Math.atan2(target.dock.x - seaBoat.x, -(target.dock.y - seaBoat.y));
     const arrow = compass[(Math.round(angle / (Math.PI / 4)) + 8) % 8];
-    stageLabel.textContent = `Explorando · ${zoneNames[seaWorld.biomeAt(Math.floor(seaBoat.x / sea.TILE), Math.floor(seaBoat.y / sea.TILE))]}`;
+    const zone = zoneNames[seaWorld.biomeAt(Math.floor(seaBoat.x / sea.TILE), Math.floor(seaBoat.y / sea.TILE))];
+    if (target.quest) {
+      const t = quests.template(target.quest.tpl);
+      stageLabel.textContent = `${quests.kinds[t.kind].icon} Entrega: ${t.title}`;
+    } else stageLabel.textContent = `Explorando · ${zone}`;
     stageDistance.textContent = `${arrow} ${target.dock.name.split(' ')[0]} · ${Math.round(target.d * sea.METERS_PER_UNIT)} m`;
     stageProgress.style.width = `${found / world.destinations.length * 100}%`;
+    if (seaQuests.length) {
+      questHud.textContent = seaQuests.map(q => {
+        const t = quests.template(q.tpl);
+        const left = Math.max(0, quests.parSeconds(questDistance(t)) - q.t);
+        const clock = t.kind === 'food' ? (left > 0 ? ` · frescura ${Math.ceil(left)} s` : ' · sin prima') : t.kind === 'passenger' ? ` · golpes ${q.bumps}` : '';
+        return `${quests.kinds[t.kind].icon} ${t.title} → ${seaWorld.docks.find(d => d.id === t.to).name}${clock}`;
+      }).join('\n');
+      questHud.style.whiteSpace = 'pre-line';
+      questHud.classList.remove('hidden');
+    } else questHud.classList.add('hidden');
     updateCoinHud();
   }
 
@@ -1779,6 +1888,19 @@
     const result = sea.stepBoat(seaWorld, seaBoat, input, dt);
     seaTrip.dist += result.moved * sea.METERS_PER_UNIT;
     seaTrip.elapsed += dt;
+    for (const q of seaQuests) q.t += dt;
+    // Un golpe fuerte molesta al pasajero (cuenta como mucho uno por segundo).
+    seaBumpCool = Math.max(0, seaBumpCool - dt);
+    if (result.impact > 70 && seaBumpCool === 0 && seaQuests.length) {
+      seaBumpCool = 1;
+      for (const q of seaQuests) q.bumps = Math.min(99, q.bumps + 1);
+      if (seaQuests.some(q => quests.template(q.tpl).kind === 'passenger')) seaToast('🧳 ¡Cuidado! El pasajero se queja del golpe');
+      updateSeaHud(true);
+    }
+    if (seaToastIn > 0) {
+      seaToastIn = Math.max(0, seaToastIn - dt);
+      if (seaToastIn === 0) stageToast.classList.add('hidden');
+    }
     seaFollow(dt, false);
     const speed = Math.hypot(seaBoat.vx, seaBoat.vy);
     for (const coin of seaWorld.coins) {
@@ -1845,12 +1967,13 @@
     const isPort = dock.kind === 'port';
     const meters = Math.floor(seaTrip.dist);
     const nothing = seaTrip.dist < 15 && seaTrip.pickups === 0 && seaTrip.score === 0;
+    seaDockedAt = dock.id;
     if (nothing) {
       // Sin haber navegado no hay viaje que cobrar: volver a un muelle no da monedas gratis.
       showOverlay(isPort ? '⚓ Puerto<br>Palmar' : dock.name,
         isPort ? 'Estás en casa. Elige un rumbo, recoge monedas y atraca en un muelle para cobrar el viaje y descubrir lugares.'
           : 'Ya estás en este muelle. Navega, recoge monedas y vuelve a atracar para cobrar el viaje.', 'Seguir explorando');
-      persistSea();
+      finishDock(dock, deliverQuests(dock));
       return;
     }
     const run = { id: seaTrip.id, score: seaTrip.score, lives: 3, pickups: seaTrip.pickups,
@@ -1869,6 +1992,22 @@
       seaTrip = freshSeaTrip();
       seaTaken = [];
     }
+    finishDock(dock, deliverQuests(dock));
+  }
+
+  // Cierre común de un atraque: tarjeta de entregas, botón para hablar y estado guardado.
+  function finishDock(dock, delivered) {
+    const person = quests.npc(dock.id);
+    if (delivered.length) {
+      document.getElementById('deliveryTitle').textContent = delivered.length > 1 ? '📦 ¡Entregas completadas!' : '📦 ¡Entrega completada!';
+      document.getElementById('deliveryText').textContent = delivered.map(item => item.text).join('\n');
+      deliveryCard.style.whiteSpace = 'pre-line';
+      deliveryCard.classList.remove('hidden');
+    }
+    if (person) {
+      talkButton.textContent = `💬 Hablar con ${person.name}`;
+      talkButton.classList.remove('hidden');
+    }
     refreshSeaStatus();
     persistSea();
     updateSeaHud(true);
@@ -1882,6 +2021,7 @@
     seaFrameState.taken = seaTaken;
     seaFrameState.wake = seaWake;
     seaFrameState.dockStatus = seaDockStatus;
+    seaFrameState.dockMark = seaDockMark;
     seaFrameState.shield = false;
     ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
     seaView.draw(seaFrameState);
@@ -1972,6 +2112,171 @@
   }
   exploreSeaButton.addEventListener('click', enterSea);
   exitSeaButton.addEventListener('click', exitSea);
+
+  // ---- Personajes y encargos ----
+  const repOf = giver => (economyError ? 0 : currentView().reputation.get(giver) || 0);
+  const doneOf = tpl => (economyError ? 0 : currentView().deliveries.get(tpl) || 0);
+  const dockById = id => seaWorld.docks.find(d => d.id === id);
+
+  function questDistance(item) {
+    const a = dockById(item.giver);
+    const b = dockById(item.to);
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
+  function offerStatus(item) {
+    const destination = dockById(item.to);
+    return quests.status(item, { rep: repOf(item.giver), done: doneOf(item.id), active: seaQuests.some(q => q.tpl === item.id),
+      activeCount: seaQuests.length, destinationOpen: !economyError && (item.to === 'puerto' || routeOpen(item.to)),
+      destinationName: destination.name });
+  }
+
+  function seaToast(text) {
+    stageToast.textContent = text;
+    stageToast.classList.remove('hidden');
+    seaToastIn = 2.5;
+  }
+
+  function acceptQuest(tplId) {
+    const item = quests.template(tplId);
+    if (!item || mode !== 'sea' || dialogDock !== item.giver || seaDockedAt !== item.giver) return false;
+    if (!offerStatus(item).canAccept) return false;
+    seaQuests.push({ id: `q${newRunId()}`, tpl: item.id, t: 0, bumps: 0 });
+    questDeclined.delete(item.id);
+    persistSea();
+    refreshSeaStatus();
+    updateSeaHud(true);
+    return true;
+  }
+
+  function declineQuest(tplId) {
+    const item = quests.template(tplId);
+    if (!item || dialogDock !== item.giver) return false;
+    questDeclined.add(tplId);
+    return true;
+  }
+
+  // Cobra una entrega en el historial: un evento único por encargo, así que repetir el cierre no paga dos veces.
+  function deliverQuests(dock) {
+    const delivered = [];
+    for (const q of [...seaQuests]) {
+      const item = quests.template(q.tpl);
+      if (!item || item.to !== dock.id) continue;
+      if (!economyError && currentView().questIds.has(q.id)) { seaQuests = seaQuests.filter(other => other !== q); continue; }
+      const before = repOf(item.giver);
+      const pay = quests.reward(item, { done: doneOf(item.id), rep: before, elapsed: q.t, par: quests.parSeconds(questDistance(item)), bumps: q.bumps });
+      const event = { type: 'earn', amount: pay.amount, quest: { id: q.id, tpl: item.id, giver: item.giver, to: item.to } };
+      if (economyError || !saveEconomy(economyWithEvent(event))) {
+        delivered.push({ text: `${quests.npc(item.to).name}: «${item.thanks}»\nNo se pudo guardar el pago: la entrega sigue pendiente y se cobrará en el próximo atraque.` });
+        continue;
+      }
+      seaQuests = seaQuests.filter(other => other !== q);
+      const after = repOf(item.giver);
+      const levelUp = quests.level(after).stars > quests.level(before).stars ? ` ¡${quests.npc(item.giver).name} te ve ahora como «${quests.level(after).name}»!` : '';
+      delivered.push({ id: q.id, amount: pay.amount,
+        text: `${quests.npc(item.to).name}: «${item.thanks}»\n${quests.kinds[item.kind].icon} ${item.title}: +${pay.amount} 🪙` +
+          `${pay.parts.length ? ` (${pay.parts.join(' · ')})` : ''}. Reputación con ${quests.npc(item.giver).name}: +${quests.repGain(doneOf(item.id) === 1)}.${levelUp}` });
+    }
+    return delivered;
+  }
+
+  function stars(count) {
+    return count ? '⭐'.repeat(count) : '☆';
+  }
+
+  function updateDialog() {
+    const person = quests.npc(dialogDock);
+    const level = quests.level(repOf(dialogDock));
+    document.getElementById('dialogPortrait').textContent = person.icon;
+    document.getElementById('dialogName').textContent = person.name;
+    document.getElementById('dialogRole').textContent = person.role;
+    document.getElementById('dialogRep').textContent = `Reputación: ${stars(level.stars)} ${level.name} · ${repOf(dialogDock)} puntos`;
+    const offers = quests.offersFor(dialogDock);
+    let available = 0;
+    for (let i = 0; i < 3; i++) {
+      const card = document.getElementById(`offer-${i}`);
+      const item = offers[i];
+      card.classList.toggle('hidden', !item);
+      if (!item) continue;
+      const status = offerStatus(item);
+      const declined = questDeclined.has(item.id);
+      const pay = quests.reward(item, { done: doneOf(item.id), rep: repOf(item.giver), elapsed: quests.parSeconds(questDistance(item)) * 1.5, par: quests.parSeconds(questDistance(item)), bumps: 1 });
+      const distance = questDistance(item);
+      const difficulty = Math.min(5, (distance < 1500 ? 1 : distance < 2800 ? 2 : 3) + (item.kind === 'passenger' ? 1 : 0));
+      if (status.canAccept && !declined) available++;
+      document.getElementById(`offerTitle-${i}`).textContent = `${quests.kinds[item.kind].icon} ${item.title}`;
+      document.getElementById(`offerInfo-${i}`).textContent = `${quests.kinds[item.kind].name} → ${dockById(item.to).name} · ${Math.round(distance * sea.METERS_PER_UNIT)} m en línea recta · ` +
+        `Dificultad ${'★'.repeat(difficulty)}${'☆'.repeat(5 - difficulty)} · Paga ≈ ${pay.amount} 🪙. ${quests.kinds[item.kind].hint}`;
+      document.getElementById(`offerState-${i}`).textContent = declined && status.canAccept ? 'Rechazado por ahora' : status.reason;
+      const accept = document.getElementById(`offerAccept-${i}`);
+      const decline = document.getElementById(`offerDecline-${i}`);
+      accept.disabled = !status.canAccept || declined;
+      decline.disabled = !status.canAccept || declined;
+      accept.textContent = status.canAccept && !declined ? 'Aceptar' : 'No disponible';
+    }
+    const carrying = seaQuests.map(q => { const t = quests.template(q.tpl); return `${quests.kinds[t.kind].icon} ${t.title} → ${dockById(t.to).name}`; });
+    document.getElementById('dialogActive').textContent = carrying.length ? `Llevas (${carrying.length}/${quests.maxActive}): ${carrying.join(' · ')}` : '';
+    return available;
+  }
+
+  function openDialog(dockId) {
+    if (mode !== 'sea' || state !== 'arrived' || !quests.npc(dockId) || seaDockedAt !== dockId) return;
+    dialogDock = dockId;
+    dialogChat = 0;
+    const person = quests.npc(dockId);
+    const stage = quests.level(repOf(dockId)).stars;
+    const available = updateDialog();
+    const greeting = person.greet[Math.min(2, stage)];
+    document.getElementById('dialogText').textContent = available ? greeting : `${greeting} ${person.none}`;
+    dialogPanel.classList.remove('hidden');
+  }
+
+  function closeDialog() {
+    if (!dialogDock) return;
+    dialogDock = '';
+    dialogPanel.classList.add('hidden');
+    refreshSeaStatus();
+    updateSeaHud(true);
+  }
+
+  function chatDialog() {
+    if (!dialogDock) return;
+    const person = quests.npc(dialogDock);
+    document.getElementById('dialogText').textContent = person.chat[dialogChat % person.chat.length];
+    dialogChat++;
+  }
+
+  function updateQuestBook() {
+    const total = economyError ? 0 : [...currentView().deliveries.values()].reduce((sum, n) => sum + n, 0);
+    document.getElementById('quest-total').textContent = String(total);
+    for (const person of quests.npcs) {
+      const points = repOf(person.id);
+      const level = quests.level(points);
+      document.getElementById(`rep-${person.id}`).textContent = `${stars(level.stars)} ${level.name} · ${points} puntos`;
+    }
+  }
+
+  talkButton.addEventListener('click', () => openDialog(seaDockedAt));
+  document.getElementById('closeDialog').addEventListener('click', closeDialog);
+  document.getElementById('dialogChat').addEventListener('click', chatDialog);
+  for (let i = 0; i < 3; i++) {
+    document.getElementById(`offerAccept-${i}`).addEventListener('click', () => {
+      const item = quests.offersFor(dialogDock)[i];
+      if (!item) return;
+      const person = quests.npc(dialogDock);
+      if (acceptQuest(item.id)) {
+        document.getElementById('dialogText').textContent = `${item.ask} Te espero con buenas noticias en ${dockById(item.to).name}.`;
+        updateDialog();
+      } else document.getElementById('dialogText').textContent = `${person.name}: ahora mismo no puedo darte ese encargo.`;
+    });
+    document.getElementById(`offerDecline-${i}`).addEventListener('click', () => {
+      const item = quests.offersFor(dialogDock)[i];
+      if (item && declineQuest(item.id)) {
+        document.getElementById('dialogText').textContent = 'Sin problema. Si cambias de idea, aquí estaré.';
+        updateDialog();
+      }
+    });
+  }
 
   settingsButton.addEventListener('click', openSettings);
   openingSettings.addEventListener('click', openSettings);
