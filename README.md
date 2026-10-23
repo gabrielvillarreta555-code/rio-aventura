@@ -73,6 +73,14 @@ o pérdida. Conserva una copia fuera del teléfono antes de desinstalar: Android
 no respalda automáticamente los datos de esta app. Google Play Games,
 clasificaciones y sincronización en la nube siguen pendientes de configurar.
 
+La versión 2.1 añade monedas flotantes durante cada viaje. Desvíate para
+recogerlas sin tocar los obstáculos: cada una agrega tres monedas a la recompensa
+del viaje terminado. La recompensa total mantiene el límite de 80 monedas por
+viaje y se guarda en el mismo registro local de la versión 2.0; recoger una
+moneda no acredita saldo hasta terminar. El HUD muestra el bono provisional.
+No cambia los radios de colisión, las lanchas ni los datos guardados existentes.
+Google Play Games y el guardado en la nube siguen pendientes.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
