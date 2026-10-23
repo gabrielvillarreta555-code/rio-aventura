@@ -64,11 +64,11 @@ test('lanzar la caña deja la lancha quieta, espera la picada y avisa con clarid
   assert.equal(game.api().fishingState(), null, 'mover la lancha cancela la pesca');
   assert.match(game.text('stageToast'), /Dejaste de pescar/);
   goTo(game, 'bahia');
-  boat.vx = 25;
+  boat.vy = -25;
   game.click('fishButton');
-  const x = boat.x;
+  const y0 = boat.y;
   game.tick(60, 16);
-  assert(Math.abs(boat.x - x) < 10, `el freno automático la detiene en seco (${(boat.x - x).toFixed(1)})`);
+  assert(Math.abs(boat.y - y0) < 10, `el freno automático la detiene en seco (${(boat.y - y0).toFixed(1)})`);
   assert(Math.hypot(boat.vx, boat.vy) < 1, 'queda parada');
   for (let i = 0; i < 300 && game.api().fishingState().phase === 'wait'; i++) game.tick(1, 16);
   assert.equal(game.api().fishingState().phase, 'bite');
