@@ -90,6 +90,25 @@ monedas, respectivamente. Los rangos y premios se guardan en el mismo registro
 local de monedas y se incluyen en la copia manual; los datos de 2.1 siguen
 siendo válidos. No hay conexión con Google ni clasificación mundial todavía.
 
+La versión 2.3 da identidad visual propia a las insignias de Explorador,
+Navegante y Capitán del río, muestra una barra de avance hacia el siguiente
+rango y celebra brevemente cada ascenso (con anuncio accesible y movimiento
+reducido cuando el sistema lo solicita). Incluye tres misiones locales por día:
+150 m recorridos (+5 monedas), 4 esquivas (+6) y 2 monedas flotantes recogidas
+(+4). Se cuentan al terminar viajes y se pagan automáticamente una sola vez
+por misión y día, en el mismo registro local de monedas. Si el reloj retrocede,
+el juego conserva el último día registrado para impedir repetir cobros de días
+anteriores; sin servidor no puede impedir que alguien adelante manualmente el
+reloj. Los viajes de versiones anteriores no contienen fecha ni progreso diario,
+así que no se acreditan retroactivamente para estas misiones.
+
+También aparecen cuatro logros permanentes derivados de estadísticas locales
+guardadas; no son logros de Google Play Games. La lancha Brisa se desbloquea al
+obtener Explorador y Aurora al obtener Capitán del río. Ambas son cosméticas y
+no requieren monedas ni cambian la física. Perfil, récord, estadísticas, compras,
+rangos y copias manuales anteriores se conservan al actualizar; la copia manual
+nueva incluye misiones y desbloqueos. No desinstales la app para actualizarla.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
