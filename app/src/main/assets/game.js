@@ -500,6 +500,7 @@
     tune = activeRoute ? activeRoute.tune : world.defaultTune;
     tripStages = activeRoute ? activeRoute.stages : stages;
     scene.theme = activeRoute ? activeRoute.theme : 'free';
+    art.setTheme(scene.theme, 0);
   }
 
   function remainingMeters() {

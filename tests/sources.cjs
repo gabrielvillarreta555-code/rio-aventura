@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 
 const dir = 'app/src/main/assets';
-const libraries = ['world.js', 'art.js', 'map.js'];
+const libraries = ['world.js', 'art.js', 'art-themes.js', 'map.js'];
 
 module.exports = {
   libs: libraries.map(name => fs.readFileSync(`${dir}/${name}`, 'utf8')).join('\n'),

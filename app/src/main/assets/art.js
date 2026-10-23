@@ -102,6 +102,9 @@
     }
   }
 
+  // Temas de ruta (art-themes.js los registra): paleta, vegetación, orillas y un hito final propios.
+  const themes = Object.create(null);
+
   function create(options) {
     const canvas = options.canvas;
     const ctx = options.ctx;
@@ -121,6 +124,10 @@
     let stageFrom = 0;
     let stageTo = 0;
     let stageMix = 1;
+    let theme = null;
+    let themeId = 'free';
+    let pals = palettes;
+    let themeSpecs = null;
     let sprites = Object.create(null);
     let tiles = null;
     let boatPhase = 0;
@@ -852,7 +859,10 @@
     }
 
     function paintFog(g, index) {
-      const haze = palettes[index].haze;
+      paintHaze(g, palettes[index].haze);
+    }
+
+    function paintHaze(g, haze) {
       g.fillStyle = linear(g, 0, 0, 0, 64, [0, rgba(haze, 0.5), 0.45, rgba(haze, 0.2), 1, rgba(haze, 0)]);
       g.fillRect(0, 0, 8, 64);
     }
@@ -904,7 +914,37 @@
     const dropKeys = Object.create(null);
 
     function S(name) {
-      return sprites[name] || named[name]();
+      return sprites[name] || (named[name] ? named[name]() : themed(name));
+    }
+
+    // Sprites propios del tema actual: una variante teñida de uno existente o una pintura nueva.
+    function themed(name) {
+      const spec = themeSpecs && themeSpecs[name];
+      if (!spec) throw new Error(`Sprite desconocido: ${name}`);
+      if (spec.base) {
+        const base = S(spec.base);
+        return sprite(name, base.w, base.h, base.ox, base.oy, g => {
+          base.paint(g);
+          // Solo se tiñe en un lienzo propio; sin sprites ocultos se dibuja el original.
+          if (g === ctx) return;
+          g.globalCompositeOperation = spec.mode || 'source-atop';
+          g.fillStyle = spec.tint;
+          g.fillRect(-base.ox, -base.oy, base.w, base.h);
+          g.globalCompositeOperation = 'source-over';
+        });
+      }
+      return sprite(name, spec.w, spec.h, spec.ox, spec.oy, g => spec.paint(g, helpers));
+    }
+
+    function palAt(index) {
+      return pals[Math.min(index, pals.length - 1)];
+    }
+
+    function fogSprite(index) {
+      if (!theme) return S(fogNames[index]);
+      const i = Math.min(index, pals.length - 1);
+      const key = `${themeId}:fog${i}`;
+      return sprites[key] || sprite(key, 8, 64, 0, 0, g => paintHaze(g, pals[i].haze));
     }
 
     function hullSprite(style) {
@@ -951,6 +991,30 @@
       for (const key in named) S(key);
       for (const color of DROP_COLORS) dropSprite(color);
       for (const style of knownStyles) hullSprite(style);
+      warmTheme();
+    }
+
+    function warmTheme() {
+      if (!themeSpecs) return;
+      for (const key in themeSpecs) S(key);
+      for (let i = 0; i < pals.length; i++) fogSprite(i);
+    }
+
+    // Cambia el aspecto a una ruta (o `free`). Se llama al empezar el viaje para que los
+    // sprites del tema estén listos antes del primer fotograma.
+    function setTheme(id, stage) {
+      const next = id && themes[id] ? themes[id] : null;
+      const nextId = next ? id : 'free';
+      if (nextId === themeId) return;
+      themeId = nextId;
+      theme = next;
+      pals = next ? next.palettes : palettes;
+      themeSpecs = next ? next.sprites : null;
+      stageFrom = stageTo = stage || 0;
+      stageMix = 1;
+      waterStyle = null;
+      debug.theme = themeId;
+      if (tiles) warmTheme();
     }
 
     function prepare(styles) {
@@ -995,6 +1059,7 @@
       flow += flowSpeed * dt;
       boatPhase += dt * (9 + flowSpeed / 100);
       cameraX = scene.cameraX;
+      if ((scene.theme || 'free') !== themeId) setTheme(scene.theme, scene.stageIndex);
       if (scene.stageIndex !== stageTo) {
         stageFrom = stageMix >= 1 ? stageTo : stageFrom;
         stageTo = scene.stageIndex;
@@ -1076,8 +1141,8 @@
 
     // ---------- Dibujo ----------
     function waterPalette() {
-      const from = palettes[stageFrom];
-      const to = palettes[stageTo];
+      const from = palAt(stageFrom);
+      const to = palAt(stageTo);
       if (stageMix >= 1) return to;
       return {
         water: [mixColor(from.water[0], to.water[0], stageMix), mixColor(from.water[1], to.water[1], stageMix), mixColor(from.water[2], to.water[2], stageMix)],
@@ -1212,6 +1277,10 @@
       ctx.moveTo(r0 + shift, -scroll); ctx.lineTo(WIDTH + 12 + shift, -scroll); ctx.lineTo(WIDTH + 12 + shift, height - scroll); ctx.lineTo(r1 + shift, height - scroll);
       ctx.closePath();
       ctx.fill();
+      if (theme && theme.landTint) {
+        ctx.fillStyle = theme.landTint;
+        ctx.fill();
+      }
       ctx.restore();
       if (detail >= 2) {
         // Montañas lejanas solo sobre la tierra (un único recorte pequeño).
@@ -1221,7 +1290,7 @@
         ctx.moveTo(-12, 0); ctx.lineTo(l0, 0); ctx.lineTo(edgeX(0, reach), reach); ctx.lineTo(-12, reach); ctx.closePath();
         ctx.moveTo(r0, 0); ctx.lineTo(WIDTH + 12, 0); ctx.lineTo(WIDTH + 12, reach); ctx.lineTo(edgeX(1, reach), reach); ctx.closePath();
         ctx.clip();
-        putFlat(S('backdrop'), -55 - cameraX * 0.35, 0, 1, 1, 1);
+        putFlat(S(theme && theme.backdrop ? theme.backdrop : 'backdrop'), -55 - cameraX * 0.35, 0, 1, 1, 1);
         ctx.restore();
       }
     }
@@ -1271,7 +1340,11 @@
       const step = detail === 0 ? 2 : 1;
       const first = Math.floor((flow - height - 100) / SPACING);
       const last = Math.ceil((flow + 160) / SPACING);
-      const reeds = S('reeds');
+      const veg = theme && theme.vegetation;
+      const reeds = S(veg && veg.reeds ? veg.reeds : 'reeds');
+      const reedChance = veg && veg.reedChance !== undefined ? veg.reedChance : 0.26;
+      const underChance = veg ? veg.underChance : 0.72;
+      const treeChance = veg ? veg.treeChance : 0.64;
       for (let n = last; n >= first; n--) {
         if (step === 2 && (n & 1)) continue;
         const y = flow - n * SPACING;
@@ -1281,23 +1354,36 @@
           const dir = side ? 1 : -1;
           const salt = side * 13;
           const edge = edgeX(side, y);
-          if (hash(n, salt + 9) < 0.26) putFlat(reeds, edge - dir * 4 * d, y + 3 * d, d * 0.95, d * 0.95, 1);
+          if (hash(n, salt + 9) < reedChance) putFlat(reeds, edge - dir * 4 * d, y + 3 * d, d * 0.95, d * 0.95, 1);
           const under = hash(n, salt + 5);
-          if (under < 0.72) {
+          if (under < underChance) {
             const lateral = 36 + hash(n, salt + 6) * 30;
-            const name = under < 0.3 ? 'bush0' : under < 0.43 ? 'bush1' : under < 0.58 ? 'fern' : 'bankRocks';
+            const name = veg ? veg.under[Math.floor(under / underChance * veg.under.length) % veg.under.length]
+              : under < 0.3 ? 'bush0' : under < 0.43 ? 'bush1' : under < 0.58 ? 'fern' : 'bankRocks';
             const k = d * (0.9 + hash(n, salt + 7) * 0.35);
             putFlat(S(name), edge + dir * lateral * d, y + 6 * d, k, k, 1);
           }
           const tree = hash(n, salt + 1);
-          if (tree < 0.64) {
+          if (tree < treeChance) {
             const lateral = 44 + hash(n, salt + 2) * 62;
             const k = d * (0.74 + hash(n, salt + 3) * 0.32);
-            const name = tree < 0.42 ? palmNames[Math.floor(hash(n, salt + 4) * 3) % 3] : jungleNames[Math.floor(hash(n, salt + 4) * 2) % 2];
-            putFlat(S(name), edge + dir * lateral * d, y, k, k, 1);
+            const pick = hash(n, salt + 4);
+            const name = veg ? veg.trees[Math.floor(pick * veg.trees.length) % veg.trees.length]
+              : tree < 0.42 ? palmNames[Math.floor(pick * 3) % 3] : jungleNames[Math.floor(pick * 2) % 2];
+            putFlat(S(name), edge + dir * lateral * d, y, k * (veg && veg.scale ? veg.scale : 1), k * (veg && veg.scale ? veg.scale : 1), 1);
           }
         }
       }
+    }
+
+    // Hito del destino: aparece al fondo del río en los últimos metros y crece al acercarse.
+    const LANDMARK_RANGE = 170;
+    function drawLandmark(scene) {
+      if (!theme || !theme.landmark || scene.remaining < 0 || scene.remaining >= LANDMARK_RANGE) return;
+      const t = 1 - scene.remaining / LANDMARK_RANGE;
+      const y = -10 + t * height * 0.27;
+      const k = (0.5 + 0.5 * t) * depthAt(y) / 0.7;
+      putFlat(S(theme.landmark), projectX(WIDTH / 2, y), y, k, k, Math.min(1, t * 3));
     }
 
     function drawObstacle(item) {
@@ -1316,12 +1402,12 @@
         ctx.ellipse(x, y + 10 * k, (item.radius + 10 + Math.sin(time * 4 + item.phase) * 2) * d, (item.radius * 0.5 + 5) * d, 0, 0, TAU);
         ctx.stroke();
         ctx.globalAlpha = 1;
-        putFlat(S(variant === 0 ? 'rock0' : variant === 1 ? 'rock1' : 'rock2'), x, y, k, k, 1);
+        putFlat(S(theme && theme.rocks ? theme.rocks[variant] : variant === 0 ? 'rock0' : variant === 1 ? 'rock1' : 'rock2'), x, y, k, k, 1);
       } else {
         const rotation = Math.sin(time * 2 + item.phase) * 0.1 + 0.18;
         const flip = item.vx < 0 ? -1 : 1;
         if (detail >= 1) putFlat(S('wakeTail'), x - 2 * d, y + 14 * d, d * 1.25, d * 1.1, 0.45 + 0.2 * Math.sin(time * 5 + item.phase));
-        const log = S(item.kind === 'drift' ? 'log1' : 'log0');
+        const log = S(theme && theme.logs ? theme.logs[item.kind === 'drift' ? 1 : 0] : item.kind === 'drift' ? 'log1' : 'log0');
         put(log, x, y, d, d, rotation, 1);
         if (item.kind === 'drift') put(S('driftMark'), x + flip * 12 * d, y + 1 * d, d * flip, d, rotation, 1);
       }
@@ -1489,10 +1575,27 @@
     }
 
     // Pétalos y hojas que flotan por la escena y, al atardecer, luciérnagas (nivel máximo).
+    // Partículas del tema: luciérnagas, niebla, polvo dorado... siempre con sprites ya preparados.
+    function drawThemeAmbient(amb) {
+      const item = S(amb.sprite);
+      if (amb.additive) ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < amb.count; i++) {
+        const x = WIDTH * (0.08 + 0.84 * hash(i, 610)) + Math.sin(time * 0.7 + i * 2.3) * (amb.sway || 24);
+        const y = amb.fall
+          ? ((time * amb.fall * (0.6 + hash(i, 612)) + hash(i, 611) * (height + 80)) % (height + 80)) - 40
+          : height * (0.2 + 0.65 * hash(i, 611)) + Math.cos(time * 0.9 + i * 1.7) * 20;
+        const blink = amb.blink ? 0.5 + 0.5 * Math.sin(time * 2.6 + i * 3.1) : 1;
+        const size = amb.size * (0.6 + 0.5 * hash(i, 613)) * (amb.blink ? 0.6 + blink * 0.5 : 1);
+        putFlat(item, x, y, size, size, amb.alpha * (amb.blink ? 0.35 + 0.65 * blink : 1));
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
     function drawAmbient(scene) {
       if (detail < 2) return;
       drawSpeedLines(scene.riverSpeed);
-      if (stageTo === 3) {
+      if (theme && theme.ambient) drawThemeAmbient(theme.ambient);
+      else if (stageTo === 3) {
         ctx.globalCompositeOperation = 'lighter';
         const glow = S('glow');
         for (let i = 0; i < 9; i++) {
@@ -1503,7 +1606,7 @@
         }
         ctx.globalCompositeOperation = 'source-over';
       }
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < (theme && theme.petals === false ? 0 : 6); i++) {
         const speed = 22 + hash(i, 500) * 22;
         const y = ((time * speed + hash(i, 501) * (height + 60)) % (height + 60)) - 30;
         const x = ((hash(i, 502) * WIDTH + time * (6 + hash(i, 503) * 10)) % (WIDTH + 40)) - 20 + Math.sin(time * 0.9 + i * 1.7) * 14;
@@ -1556,9 +1659,9 @@
         if (scene.impact > 0) drawImpact(scene);
         return;
       }
-      const fogA = S(fogNames[stageTo]);
+      const fogA = fogSprite(stageTo);
       if (stageMix < 1) {
-        putFlat(S(fogNames[stageFrom]), 0, 0, WIDTH / 8, height * 0.3 / 64, 1 - stageMix);
+        putFlat(fogSprite(stageFrom), 0, 0, WIDTH / 8, height * 0.3 / 64, 1 - stageMix);
         putFlat(fogA, 0, 0, WIDTH / 8, height * 0.3 / 64, stageMix);
       } else putFlat(fogA, 0, 0, WIDTH / 8, height * 0.3 / 64, 1);
       if (detail >= 2 && !skip.shafts) {
@@ -1620,6 +1723,7 @@
       if (probe) mark('banks');
       if (!skip.vegetation) drawVegetation();
       if (probe) mark('vegetation');
+      if (!skip.landmark) drawLandmark(scene);
       if (!skip.wake) drawWake(scene);
       if (!skip.coins) drawCollectibles(scene.collectibles);
       if (probe) mark('wake+coins');
@@ -1653,10 +1757,13 @@
       debug.drawnLast = debug.drawn;
     }
 
-    return { resize, prepare, setQuality, setDetail, update, draw, effect, debug, depthAt, projectX, sprite: S, hullSprite };
+    return { resize, prepare, setQuality, setDetail, setTheme, update, draw, effect, debug, depthAt, projectX, sprite: S, hullSprite };
   }
 
   let lastInstance = null;
   const factory = options => { lastInstance = create(options); return lastInstance; };
-  window.RioArt = { create: factory, palettes, hash, get instance() { return lastInstance; } };
+  const helpers = Object.freeze({ TAU, hash, rgba, mixColor, ellipse, fillEllipse, linear, radial, leaf, clamp });
+  // art-themes.js añade aquí un tema por destino (id = id de la ruta).
+  const addTheme = (id, definition) => { themes[id] = Object.freeze(definition); };
+  window.RioArt = { create: factory, palettes, hash, themes, addTheme, helpers, get instance() { return lastInstance; } };
 })();

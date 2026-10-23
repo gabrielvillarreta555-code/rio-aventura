@@ -568,3 +568,4 @@ require('./art-render.cjs');
 require('./world.cjs');
 require('./exploration.cjs');
 require('./map-ui.cjs');
+require('./themes.cjs');

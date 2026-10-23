@@ -139,6 +139,12 @@ function launch({ store = makeStore(), pixelRatio, sprites = true, random = () =
       for (let i = 0; i < 20 && api.state() === 'playing'; i++) { game.tick(1, 16); api.lives(3); }
       return api.state();
     },
+    // Descubre todos los destinos (la laguna necesita además el rango Navegante) para probar cualquier ruta.
+    unlockWorld() {
+      for (const id of ['aldea', 'manglar', 'cascada', 'ruinas']) { game.sail(id); game.arrive(); }
+      game.sail('ruinas'); game.arrive(20);
+      game.sail('laguna'); game.arrive();
+    },
     wallet: () => Number(/🪙 (\d+)/.exec(game.text('coinHud'))[1])
   };
   sandbox.RioWorld = sandbox.window.RioWorld;
