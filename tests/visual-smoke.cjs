@@ -8,10 +8,15 @@ const translations = [];
 let fullCanvasFills = 0;
 let waterGradientCreates = 0;
 let driftDraws = 0;
+let blockEconomyWrites = false;
+const boatColors = [];
 const gradient = { addColorStop() {} };
 const context = new Proxy({
   createLinearGradient(x0, y0, x1, y1) {
     if (x0 === 0 && y0 === 0 && x1 === canvas.width && y1 === canvas.height) waterGradientCreates++;
+    if (x0 === -42 && y0 === -18 && x1 === 42 && y1 === 34) {
+      return { addColorStop(_position, color) { boatColors.push(color); } };
+    }
     return gradient;
   },
   createRadialGradient: () => gradient,
@@ -83,7 +88,10 @@ const sandbox = {
   window: { addEventListener(name, callback) { events.set(`window:${name}`, callback); } },
   localStorage: {
     getItem(key) { return storage.get(key) ?? null; },
-    setItem(key, value) { storage.set(key, String(value)); }
+    setItem(key, value) {
+      if (blockEconomyWrites && key === 'rio-aventura-economy-v1') throw new Error('storage full');
+      storage.set(key, String(value));
+    }
   },
   requestAnimationFrame(callback) { nextFrame = callback; },
   Math: sandboxMath
@@ -120,7 +128,7 @@ assert(operations.filter(name => name === 'bezierCurveTo').length > 5, 'moving w
 assert(operations.filter(name => name === 'arc').length > 20, 'layered riverside trees should be drawn');
 assert.equal(waterGradientCreates, 1, 'the water gradient should be reused between frames');
 const html = fs.readFileSync('app/src/main/assets/index.html', 'utf8');
-for (const id of ['settings', 'openingSettings', 'settingsPanel', 'profileName', 'avatar', 'quality', 'performanceInfo', 'bestScore', 'totalRuns', 'totalDodged', 'legacyDodged', 'playerTag', 'backupText', 'exportProgress', 'importProgress', 'stageLabel', 'stageDistance', 'stageProgress', 'stageToast']) {
+for (const id of ['settings', 'openingSettings', 'settingsPanel', 'profileName', 'avatar', 'quality', 'performanceInfo', 'bestScore', 'totalRuns', 'totalDodged', 'legacyDodged', 'playerTag', 'backupText', 'exportProgress', 'importProgress', 'stageLabel', 'stageDistance', 'stageProgress', 'stageToast', 'coinHud', 'garageCoins', 'boat-classic', 'boat-coral', 'boat-storm']) {
   assert(html.includes(`id="${id}"`), `the settings screen needs ${id}`);
 }
 events.get('settings:click')();
@@ -128,6 +136,8 @@ assert(!elements.get('settingsPanel').classList.contains('hidden'), 'settings sh
 assert(/FPS dibujados/.test(elements.get('performanceInfo').textContent), 'settings should show a gameplay FPS sample');
 assert.equal(elements.get('profileName').value, 'Invitado', 'a new player starts as a guest');
 assert.equal(elements.get('bestScore').textContent, '42', 'the existing record should remain visible');
+events.get('boat-coral:click')();
+assert(elements.get('garageNotice').textContent.includes('Faltan'), 'boats should not be purchasable without coins');
 elements.get('profileName').value = 'Gabriel';
 events.get('saveProfile:click')();
 assert.equal(JSON.parse(storage.get('rio-aventura-profile-v1')).name, 'Gabriel', 'guest name should persist');
@@ -169,6 +179,11 @@ assert(stats.distance > 0, 'finished trips should save distance');
 assert.equal(stats.version, 2, 'accurate dodges need the new statistics format');
 assert.equal(stats.dodged, 0, 'obstacles that hit the boat must not count as dodged');
 assert.equal(storage.get('rio-aventura-best-v1'), '42', 'new statistics must not erase the old record');
+const firstEconomy = JSON.parse(storage.get('rio-aventura-economy-v1') || 'null');
+assert(firstEconomy && firstEconomy.events.length === 1, 'one finished run should grant one coin award');
+assert(firstEconomy.events[0].amount > 0, 'the run award must be positive');
+for (let time = 40000; time < 40500; time += 50) nextFrame(time);
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, 1, 'a finished run must not grant coins twice');
 events.get('openingSettings:click')();
 assert.equal(elements.get('totalRuns').textContent, '1', 'settings should show saved trips');
 assert.equal(elements.get('totalDistance').textContent, `${stats.distance} m`, 'settings should show saved distance');
@@ -176,10 +191,11 @@ assert.equal(elements.get('totalDodged').textContent, '0', 'settings should show
 events.get('exportProgress:click')();
 const backup = elements.get('backupText').value;
 const decodedBackup = JSON.parse(backup);
-assert.equal(decodedBackup.format, 'rio-aventura-progress-v1', 'manual backup needs a versioned format');
+assert.equal(decodedBackup.format, 'rio-aventura-progress-v2', 'manual backup needs the new versioned format');
 assert.equal(decodedBackup.profile.name, 'Gabriel', 'manual backup should include the guest name');
 assert.equal(decodedBackup.best, 42, 'manual backup should include the original record');
 assert.equal(decodedBackup.stats.runs, 1, 'manual backup should include completed trips');
+assert.equal(decodedBackup.economy.events.length, 1, 'manual backup should include coin awards');
 assert(elements.get('backupText').selected, 'backup text should be selected for copying');
 elements.get('backupText').value = '{invalid';
 events.get('importProgress:click')();
@@ -200,19 +216,57 @@ higherBackup.best = 48;
 higherBackup.stats.runs = 3;
 higherBackup.stats.dodged = 4;
 higherBackup.stats.distance += 250;
+higherBackup.economy.events.push({ id: 'bonus-50', type: 'earn', amount: 50 });
+higherBackup.economy.events.push({ id: 'bonus-50b', type: 'earn', amount: 50 });
 elements.get('backupText').value = JSON.stringify(higherBackup);
 events.get('importProgress:click')();
 assert.equal(elements.get('bestScore').textContent, '48', 'restore should accept a higher record');
 assert.equal(elements.get('totalRuns').textContent, '3', 'restore should accept higher trip totals');
+const coinsBeforePurchase = Number.parseInt(elements.get('garageCoins').textContent, 10);
+assert(coinsBeforePurchase >= 50, 'a valid newer backup should restore its coins');
+blockEconomyWrites = true;
+events.get('boat-coral:click')();
+assert.equal(Number.parseInt(elements.get('garageCoins').textContent, 10), coinsBeforePurchase, 'failed storage writes must not spend coins');
+assert.notEqual(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'coral', 'failed purchases must not equip a boat');
+blockEconomyWrites = false;
+events.get('boat-coral:click')();
+assert.equal(Number.parseInt(elements.get('garageCoins').textContent, 10), coinsBeforePurchase - 15, 'a purchase should deduct its price exactly once');
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'coral', 'a purchased boat should be equipped');
+events.get('boat-coral:click')();
+assert.equal(Number.parseInt(elements.get('garageCoins').textContent, 10), coinsBeforePurchase - 15, 'repeating a purchase must not deduct twice');
+events.get('boat-storm:click')();
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'storm', 'the second boat should be purchasable');
+const coinsAfterPurchase = Number.parseInt(elements.get('garageCoins').textContent, 10);
+events.get('boat-classic:click')();
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'classic', 'owned boats should remain selectable');
+events.get('boat-storm:click')();
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'storm', 'garage selection should not require buying twice');
 elements.get('backupText').value = backup;
 events.get('importProgress:click')();
 assert.equal(elements.get('totalRuns').textContent, '3', 'an older backup must not decrease or duplicate totals');
+assert.equal(Number.parseInt(elements.get('garageCoins').textContent, 10), coinsAfterPurchase, 'an older backup must not refund spent coins');
+const divergentBackup = JSON.parse(backup);
+divergentBackup.economy.events.push({ id: 'fork-10', type: 'earn', amount: 10 });
+elements.get('backupText').value = JSON.stringify(divergentBackup);
+events.get('importProgress:click')();
+assert(elements.get('backupNotice').textContent.includes('No se mezclaron'), 'divergent coin histories should be rejected');
+assert.equal(Number.parseInt(elements.get('garageCoins').textContent, 10), coinsAfterPurchase, 'a rejected backup must not alter coins');
+const legacyBackup = { ...decodedBackup, format: 'rio-aventura-progress-v1' };
+delete legacyBackup.economy;
+elements.get('backupText').value = JSON.stringify(legacyBackup);
+events.get('importProgress:click')();
+assert.equal(Number.parseInt(elements.get('garageCoins').textContent, 10), coinsAfterPurchase, 'old backups must not change the wallet');
 events.get('closeSettings:click')();
+boatColors.length = 0;
+for (let time = 40500; time < 40600; time += 16) nextFrame(time);
+assert(boatColors.includes('#447aab'), 'the selected boat should change the rendered hull color');
 storage.set('rio-aventura-stats-v1', JSON.stringify({ runs: 5, dodged: 17, distance: 520 }));
 storage.delete('rio-aventura-stats-v2');
 vm.runInNewContext(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
 events.get('openingSettings:click')();
 assert.equal(elements.get('totalRuns').textContent, '5', 'legacy trip count should migrate');
+assert.equal(elements.get('garageCoins').textContent, `${coinsAfterPurchase} monedas`, 'the wallet should survive a fresh launch');
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'storm', 'the selected boat should survive a fresh launch');
 assert.equal(elements.get('totalDodged').textContent, '0', 'old points must not be presented as verified dodges');
 assert.equal(elements.get('legacyDodged').textContent, '17', 'old estimated points should remain visible');
 elements.get('quality').value = 'high';
@@ -315,4 +369,17 @@ for (let time = 136000; time < 145000; time += 50) {
 }
 assert(rewardSeen, 'the healing stage boundary should be reached');
 assert(shieldBlocked, 'an obstacle should contact the shield in the test');
+
+// Damaged stored economy is never silently replaced by an empty wallet.
+const savedEconomy = storage.get('rio-aventura-economy-v1');
+storage.set('rio-aventura-economy-v1', '{broken');
+vm.runInNewContext(source, sandbox);
+events.get('openingSettings:click')();
+assert(elements.get('garageNotice').textContent.includes('Restaura una copia'), 'corrupt progress should request recovery');
+events.get('boat-coral:click')();
+assert.equal(storage.get('rio-aventura-economy-v1'), '{broken', 'a corrupt wallet should not be overwritten by a purchase');
+const recovery = { ...decodedBackup, economy: JSON.parse(savedEconomy) };
+elements.get('backupText').value = JSON.stringify(recovery);
+events.get('importProgress:click')();
+assert.equal(storage.get('rio-aventura-economy-v1'), savedEconomy, 'a valid backup should recover the wallet');
 console.log('Visual smoke test passed');
