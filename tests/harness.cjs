@@ -23,7 +23,7 @@ const hooks = `
     seaHintText: () => seaHintText,
     quests: () => seaQuests, questPush: (tpl, extra = {}) => { seaQuests.push({ id: "q" + newRunId(), tpl, t: 0, bumps: 0, ...extra }); refreshSeaStatus(); },
     deliverAt: id => deliverQuests(seaWorld.docks.find(d => d.id === id)), repOf: id => repOf(id), doneOf: id => doneOf(id),
-    dialogDock: () => dialogDock, dockMark: () => seaDockMark, seaSave: () => persistSea(), economyError: () => economyError
+    fishingState: () => seaFishing, bag: () => seaBag, sellId: () => seaSellId, sellNow: () => sellFish(), dialogDock: () => dialogDock, dockMark: () => seaDockMark, seaSave: () => persistSea(), economyError: () => economyError
   };
 `;
 if (!gameSource.includes(anchor)) throw new Error('El arnés necesita el ancla de game.js');
@@ -70,7 +70,7 @@ function launch({ store = makeStore(), pixelRatio, sprites = true, random = () =
       set(target, key, value) { target[key] = value; return true; }
     });
   };
-  const initiallyHidden = new Set(['settingsPanel', 'finishTrip', 'mapPanel', 'arrivalCard', 'mapHint', 'seaMap', 'seaBrake', 'joy', 'seaHint', 'exitSea', 'talk', 'deliveryCard', 'questHud', 'dialogPanel']);
+  const initiallyHidden = new Set(['settingsPanel', 'finishTrip', 'mapPanel', 'arrivalCard', 'mapHint', 'seaMap', 'seaBrake', 'joy', 'seaHint', 'exitSea', 'talk', 'deliveryCard', 'questHud', 'dialogPanel', 'saveExit', 'endTrip', 'confirmPanel', 'fishButton']);
   const element = id => {
     const classes = new Set(initiallyHidden.has(id) ? ['hidden'] : []);
     const item = {

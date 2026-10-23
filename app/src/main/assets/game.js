@@ -49,6 +49,10 @@
   const brakeButton = document.getElementById('seaBrake');
   const seaHint = document.getElementById('seaHint');
   const talkButton = document.getElementById('talk');
+  const fishButton = document.getElementById('fishButton');
+  const saveExitButton = document.getElementById('saveExit');
+  const endTripButton = document.getElementById('endTrip');
+  const confirmPanel = document.getElementById('confirmPanel');
   const deliveryCard = document.getElementById('deliveryCard');
   const questHud = document.getElementById('questHud');
   const dialogPanel = document.getElementById('dialogPanel');
@@ -71,6 +75,7 @@
   const worldBackupFormat = 'rio-aventura-progress-v4';
   const questBackupFormat = 'rio-aventura-progress-v5';
   const quests = window.RioQuests;
+  const fishing = window.RioFishing;
   const maxQuestIds = 60;
   const maxEventAmount = 200;
   const tripKey = 'rio-aventura-trip-v1';
@@ -159,11 +164,16 @@
   let seaBumpCool = 0;
   let seaToastIn = 0;
   let dialogDock = '';
+  let confirmAction = '';
+  let seaFishing = null;
+  let seaBag = fishing.emptyBag();
+  let seaSellId = '';
+  let seaFishMsg = 0;
   let dialogChat = 0;
   const questDeclined = new Set();
   let joyOrigin = { x: 0, y: 0 };
   const seaInput = { x: 0, y: 0, brake: false };
-  const seaFrameState = { cam: null, boat: null, boatStyle: null, taken: [], wake: [], dockStatus: {}, dockMark: {}, shield: false };
+  const seaFrameState = { cam: null, boat: null, boatStyle: null, taken: [], wake: [], dockStatus: {}, dockMark: {}, fishPhase: 0, shield: false };
   let seaMapCtx = null;
   const seaKeys = { up: false, down: false, left: false, right: false };
   let mapSelected = 'puerto';
@@ -298,6 +308,8 @@
     const reputation = new Map();
     const deliveries = new Map();
     const questIds = new Set();
+    const saleIds = new Set();
+    let fishSold = 0;
     let lastDay = '';
     let coins = 0;
     if (base) {
@@ -312,6 +324,8 @@
       for (const id of Object.keys(base.reputation || {})) reputation.set(id, base.reputation[id]);
       for (const id of Object.keys(base.deliveries || {})) deliveries.set(id, base.deliveries[id]);
       for (const id of base.questIds || []) questIds.add(id);
+      for (const id of base.saleIds || []) saleIds.add(id);
+      fishSold = base.fishSold || 0;
     }
     for (const event of events) {
       if (!event || typeof event.id !== 'string' || !idPattern.test(event.id) || seen.has(event.id)) return null;
@@ -321,10 +335,11 @@
         const hasRun = Object.prototype.hasOwnProperty.call(event, 'run');
         const hasDiscover = Object.prototype.hasOwnProperty.call(event, 'discover');
         const hasQuest = Object.prototype.hasOwnProperty.call(event, 'quest');
+        const hasSale = Object.prototype.hasOwnProperty.call(event, 'sale');
         const hasDaily = Object.prototype.hasOwnProperty.call(event, 'dailyDay') ||
           Object.prototype.hasOwnProperty.call(event, 'dailyMission');
-        if (Number(hasRank) + Number(hasRun) + Number(hasDaily) + Number(hasDiscover) + Number(hasQuest) > 1) return null;
-        if (!hasDiscover && !hasQuest && event.amount > 80) return null;
+        if (Number(hasRank) + Number(hasRun) + Number(hasDaily) + Number(hasDiscover) + Number(hasQuest) + Number(hasSale) > 1) return null;
+        if (!hasDiscover && !hasQuest && !hasSale && event.amount > 80) return null;
         if (hasRank) {
           const rank = ranks.find(item => item.id === event.rank);
           if (!rank || event.amount !== rank.reward || earnedRanks.has(rank.id)) return null;
@@ -356,6 +371,13 @@
           const firstTime = !deliveries.has(quest.tpl);
           deliveries.set(quest.tpl, (deliveries.get(quest.tpl) || 0) + 1);
           reputation.set(quest.giver, Math.min(quests.maxRep, (reputation.get(quest.giver) || 0) + quests.repGain(firstTime)));
+        } else if (hasSale) {
+          // Una venta de pescado es única: su identificador no puede repetirse y no supera el precio máximo posible.
+          const sale = event.sale;
+          if (!sale || typeof sale !== 'object' || !validRunId(sale.id) || !Number.isInteger(sale.n) || sale.n < 1 ||
+              sale.n > fishing.capacity || saleIds.has(sale.id) || event.amount > fishing.maxSale) return null;
+          saleIds.add(sale.id);
+          fishSold += sale.n;
         } else if (hasDaily) {
           const mission = dailyMissions.find(item => item.id === event.dailyMission);
           const claimKey = `${event.dailyDay}:${event.dailyMission}`;
@@ -378,7 +400,7 @@
     for (const boatOption of boats) {
       if (boatOption.unlockRank && earnedRanks.has(boatOption.unlockRank)) owned.add(boatOption.id);
     }
-    return { coins, owned, earnedRanks, dailyProgress, claimedMissions, lastDay, discovered, arrivals, reputation, deliveries, questIds };
+    return { coins, owned, earnedRanks, dailyProgress, claimedMissions, lastDay, discovered, arrivals, reputation, deliveries, questIds, saleIds, fishSold };
   }
 
   function validateBase(base) {
@@ -402,11 +424,14 @@
     const standing = base.reputation === undefined ? {} : base.reputation;
     const done = base.deliveries === undefined ? {} : base.deliveries;
     const paid = base.questIds === undefined ? [] : base.questIds;
+    const sold = base.saleIds === undefined ? [] : base.saleIds;
+    const soldCount = base.fishSold === undefined ? 0 : base.fishSold;
     if (!standing || typeof standing !== 'object' || Array.isArray(standing) || Object.keys(standing).length > 64 ||
         !Object.keys(standing).every(id => world.validId(id) && Number.isInteger(standing[id]) && standing[id] >= 0 && standing[id] <= quests.maxRep) ||
         !done || typeof done !== 'object' || Array.isArray(done) || Object.keys(done).length > 128 ||
         !Object.keys(done).every(id => quests.validTemplateId(id) && count(done[id])) ||
-        !Array.isArray(paid) || !unique(paid) || paid.length > maxQuestIds || !paid.every(validRunId)) return null;
+        !Array.isArray(paid) || !unique(paid) || paid.length > maxQuestIds || !paid.every(validRunId) ||
+        !Array.isArray(sold) || !unique(sold) || sold.length > maxQuestIds || !sold.every(validRunId) || !count(soldCount)) return null;
     const days = Object.keys(base.daily);
     if (days.length > maxDays || !days.every(day => validDayKey(day) && base.daily[day] &&
         ['distance', 'dodged', 'pickups'].every(key => count(base.daily[day][key])))) return null;
@@ -420,7 +445,7 @@
     }
     return { count: base.count, hash: base.hash, marks: base.marks.map(mark => ({ count: mark.count, hash: mark.hash })),
       coins: base.coins, owned: [...base.owned], ranks: [...base.ranks], lastDay: base.lastDay, daily, claimed: [...base.claimed],
-      discovered: [...found], arrivals: { ...visits }, reputation: { ...standing }, deliveries: { ...done }, questIds: [...paid] };
+      discovered: [...found], arrivals: { ...visits }, reputation: { ...standing }, deliveries: { ...done }, questIds: [...paid], saleIds: [...sold], fishSold: soldCount };
   }
 
   // Un historial usa el formato 3 en cuanto contiene destinos descubiertos o viajes con ruta:
@@ -435,8 +460,8 @@
   function usesQuests(value) {
     const base = value.base;
     if (base && ((base.reputation && Object.keys(base.reputation).length) || (base.deliveries && Object.keys(base.deliveries).length) ||
-        (base.questIds && base.questIds.length))) return true;
-    return value.events.some(event => event && event.quest !== undefined);
+        (base.questIds && base.questIds.length) || (base.saleIds && base.saleIds.length) || base.fishSold)) return true;
+    return value.events.some(event => event && (event.quest !== undefined || event.sale !== undefined));
   }
 
   function neededVersion(value) {
@@ -472,6 +497,7 @@
     if (a.reputation.size !== b.reputation.size || a.deliveries.size !== b.deliveries.size) return false;
     for (const [id, points] of a.reputation) if (b.reputation.get(id) !== points) return false;
     for (const [id, times] of a.deliveries) if (b.deliveries.get(id) !== times) return false;
+    if (a.fishSold !== b.fishSold) return false;
     if (JSON.stringify(a.dailyProgress.get(a.lastDay) || null) !== JSON.stringify(b.dailyProgress.get(b.lastDay) || null)) return false;
     return dailyMissions.every(mission =>
       a.claimedMissions.has(`${a.lastDay}:${mission.id}`) === b.claimedMissions.has(`${b.lastDay}:${mission.id}`));
@@ -505,7 +531,7 @@
       claimed: [...summary.claimedMissions].filter(key => recentDays.includes(key.slice(0, 10))),
       discovered: [...summary.discovered], arrivals: Object.fromEntries(summary.arrivals),
       reputation: Object.fromEntries(summary.reputation), deliveries: Object.fromEntries(summary.deliveries),
-      questIds: [...summary.questIds].slice(-maxQuestIds)
+      questIds: [...summary.questIds].slice(-maxQuestIds), saleIds: [...summary.saleIds].slice(-maxQuestIds), fishSold: summary.fishSold
     } };
     candidate.version = neededVersion(candidate);
     const after = validateEconomy(candidate);
@@ -898,7 +924,10 @@
     // El mapa solo se abre entre viajes: no con un viaje en pausa ni uno por retomar.
     openMapButton.classList.toggle('hidden', mode === 'sea' || Boolean(interrupted) || state === 'paused');
     exploreSeaButton.classList.toggle('hidden', mode === 'sea' || Boolean(interrupted) || state === 'paused');
-    exitSeaButton.classList.toggle('hidden', mode !== 'sea');
+    exitSeaButton.classList.toggle('hidden', mode !== 'sea' || state === 'paused');
+    // En pausa: reanudar, guardar y salir, o terminar y cobrar (solo en el río clásico).
+    saveExitButton.classList.toggle('hidden', state !== 'paused');
+    endTripButton.classList.toggle('hidden', state !== 'paused' || mode === 'sea');
     if (mode === 'sea') seaControls(false);
     overlay.classList.remove('hidden');
   }
@@ -1013,8 +1042,8 @@
     heldKeys.left = false;
     heldKeys.right = false;
     pause.textContent = '▶';
-    showOverlay('En pausa', mode === 'sea' ? `Llevas ${Math.floor(seaTrip.dist)} m y ${seaTrip.pickups} monedas sin cobrar: se cobran al llegar a un muelle.` : `Llevas ${score} puntos.`, 'Continuar');
-    if (mode === 'sea') { seaInput.x = 0; seaInput.y = 0; seaInput.brake = false; joyPointer = null; joyBase.classList.add('hidden'); }
+    showOverlay('En pausa', mode === 'sea' ? `Llevas ${Math.floor(seaTrip.dist)} m y ${seaTrip.pickups} monedas sin cobrar: se cobran al llegar a un muelle.` : `Llevas ${score} puntos.`, 'Reanudar');
+    if (mode === 'sea') { seaInput.x = 0; seaInput.y = 0; seaInput.brake = false; joyPointer = null; joyBase.classList.add('hidden'); cancelFishing(); fishButton.classList.add('hidden'); }
     persistTrip();
   }
 
@@ -1182,13 +1211,73 @@
     updateStageHud();
   }
 
-  function offerInterruptedTrip(trip) {
+  function offerInterruptedTrip(trip, savedByPlayer = false) {
     interrupted = trip;
     const route = trip.route ? world.routeById(trip.route) : null;
-    showOverlay('Viaje<br>interrumpido',
+    showOverlay(savedByPlayer ? 'Viaje<br>guardado' : 'Viaje<br>interrumpido',
       `Tu viaje ${route ? `hacia ${route.destination}` : 'anterior'} quedó guardado: ${trip.score} puntos y ${Math.floor(trip.distance)} m. Puedes continuarlo con 3 s de escudo o cobrar lo conseguido.`,
       'Continuar viaje');
   }
+
+  // ---- Pausa, guardar y salir ----
+  function classicToTitle() {
+    setActiveRoute(null);
+    launchRouteId = null;
+    reset();
+    interrupted = null;
+    state = 'ready';
+    showOverlay('Río<br>Aventura', titleMessage, '¡Jugar!');
+    updateCoinHud();
+  }
+
+  const confirmTexts = {
+    save: ['¿Guardar y salir al menú?', 'Tu progreso queda guardado y podrás continuarlo desde el menú.'],
+    end: ['¿Terminar el viaje?', 'Se terminará el viaje y se cobrarán las monedas conseguidas hasta ahora.']
+  };
+
+  function showConfirm(action) {
+    if (state !== 'paused' && state !== 'arrived') return;
+    confirmAction = action;
+    const text = confirmTexts[action];
+    document.getElementById('confirmTitle').textContent = text[0];
+    document.getElementById('confirmText').textContent = mode === 'sea' && action === 'save'
+      ? 'Tu posición, tus encargos y tu pesca quedan guardados. Volverás a este punto al entrar de nuevo.' : text[1];
+    confirmPanel.classList.remove('hidden');
+  }
+
+  function hideConfirm() {
+    confirmAction = '';
+    confirmPanel.classList.add('hidden');
+  }
+
+  // Guarda y vuelve al menú sin perder nada: en el río clásico el viaje queda guardado y se puede continuar.
+  function saveAndExit() {
+    if (mode === 'sea') { exitSea(); return true; }
+    if (state !== 'paused' || !persistTrip()) return false;
+    const trip = readTrip();
+    state = 'ready';
+    direction = 0;
+    activePointerId = null;
+    if (trip) offerInterruptedTrip(trip, true);
+    else classicToTitle();
+    return true;
+  }
+
+  function confirmYes() {
+    const action = confirmAction;
+    hideConfirm();
+    if (action === 'save') {
+      if (!saveAndExit()) {
+        showOverlay('No se pudo<br>guardar', 'No se pudo guardar el viaje. Puedes terminarlo y cobrar lo conseguido, o seguir jugando.', 'Reanudar');
+      }
+    } else if (action === 'end' && state === 'paused' && mode === 'classic') finish();
+  }
+
+  saveExitButton.addEventListener('click', () => showConfirm('save'));
+  endTripButton.addEventListener('click', () => showConfirm('end'));
+  document.getElementById('confirmYes').addEventListener('click', confirmYes);
+  document.getElementById('confirmNo').addEventListener('click', hideConfirm);
+
 
   function recoverOnStartup() {
     if (!economyError && economy.events.length > compactAfter) saveEconomy({ ...economy });
@@ -1658,10 +1747,15 @@
   mapHint.addEventListener('click', dismissMapHint);
   // Botón «atrás» de Android: MainActivity lo llama; devuelve true si el juego lo atendió.
   window.rioAventuraBack = () => {
+    if (confirmAction) { hideConfirm(); return true; }
     if (dialogDock) { closeDialog(); return true; }
     if (mapOpen) { closeMap(); return true; }
     if (settingsReturnState !== null) { closeSettings(); return true; }
     if (state === 'playing') { pauseTrip(); return true; }
+    // En el menú de pausa o en la pantalla de un muelle, «atrás» pregunta si guardar y salir.
+    if (state === 'paused' || (mode === 'sea' && state === 'arrived')) { showConfirm('save'); return true; }
+    // Tras terminar un viaje clásico, «atrás» vuelve al menú.
+    if (mode === 'classic' && (state === 'over' || state === 'arrived')) { classicToTitle(); return true; }
     return false;
   };
 
@@ -1716,7 +1810,11 @@
       if (active.some(q => q.id === item.id || q.tpl === item.tpl) || (!economyError && currentView().questIds.has(item.id))) continue;
       active.push({ id: item.id, tpl: item.tpl, t: item.t, bumps: item.bumps });
     }
-    return { x: saved.x, y: saved.y, h: saved.h, trip, quests: active, taken: trip.id === saved.id ? ids(saved.taken, seaWorld.coins.length) : [] };
+    // La pesca guardada se valida; si la venta con ese identificador ya se cobró, la bolsa ya no existe.
+    let bag = fishing.cleanBag(saved.fish && saved.fish.bag) || fishing.emptyBag();
+    let sellId = saved.fish && validRunId(saved.fish.sellId) ? saved.fish.sellId : '';
+    if (!sellId || (!economyError && currentView().saleIds.has(sellId))) { bag = fishing.emptyBag(); sellId = ''; }
+    return { x: saved.x, y: saved.y, h: saved.h, trip, quests: active, fish: { bag, sellId }, taken: trip.id === saved.id ? ids(saved.taken, seaWorld.coins.length) : [] };
   }
 
   let seaSavedText = '';
@@ -1726,7 +1824,8 @@
       h: Math.round(seaBoat.heading * 1000) / 1000, id: seaTrip.id, dist: Math.round(seaTrip.dist * 10) / 10,
       pickups: seaTrip.pickups, score: seaTrip.score, elapsed: Math.round(seaTrip.elapsed * 10) / 10,
       passed: [...seaTrip.passed], taken: seaTaken.flatMap((value, id) => value ? [id] : []),
-      quests: seaQuests.map(q => ({ id: q.id, tpl: q.tpl, t: Math.round(q.t * 10) / 10, bumps: q.bumps })) };
+      quests: seaQuests.map(q => ({ id: q.id, tpl: q.tpl, t: Math.round(q.t * 10) / 10, bumps: q.bumps })),
+      fish: { bag: seaBag, sellId: seaSellId } };
     // Parado no hay nada nuevo que escribir: se evita tocar el almacenamiento (es síncrono en WebView).
     const text = JSON.stringify(snapshot);
     if (text === seaSavedText) return true;
@@ -1739,6 +1838,7 @@
   function seaControls(on) {
     seaMapCanvas.classList.toggle('hidden', !on);
     brakeButton.classList.toggle('hidden', !on);
+    if (!on) { cancelFishing(); fishButton.classList.add('hidden'); }
   }
 
   function seaSetUi(on) {
@@ -1771,6 +1871,10 @@
     seaTaken = [];
     if (saved) for (const id of saved.taken) seaTaken[id] = true;
     seaQuests = saved ? saved.quests : [];
+    seaBag = saved ? saved.fish.bag : fishing.emptyBag();
+    seaSellId = saved && saved.fish.sellId ? saved.fish.sellId : `s${newRunId()}`;
+    seaFishing = null;
+    fishButton.classList.add('hidden');
     seaBumpCool = 0;
     seaDockedAt = '';
     questDeclined.clear();
@@ -1834,7 +1938,7 @@
     seaHudAt = 0.25;
     const found = economyError ? 0 : currentView().discovered.size;
     scoreEl.textContent = `🪙 ${seaTrip.pickups} · ${Math.floor(seaTrip.dist)} m`;
-    livesEl.textContent = `🧭 ${found}/${world.destinations.length}`;
+    livesEl.textContent = `🧭${found}/${world.destinations.length} 🐟${fishing.count(seaBag)}`;
     let target = null;
     const deliver = seaQuests.map(q => ({ q, dock: seaWorld.docks.find(d => d.id === quests.template(q.tpl).to) }));
     for (const item of deliver) {
@@ -1874,7 +1978,7 @@
     updateCoinHud();
   }
 
-  function seaEffectiveInput() {
+  function seaRawInput() {
     if (joyPointer !== null) return seaInput;
     const x = Number(seaKeys.right) - Number(seaKeys.left);
     const y = Number(seaKeys.down) - Number(seaKeys.up);
@@ -1882,9 +1986,15 @@
     return { x: x / length, y: y / length, brake: seaInput.brake };
   }
 
+  // Mientras se pesca la lancha se queda quieta (freno automático).
+  function seaEffectiveInput() {
+    return seaFishing ? { x: 0, y: 0, brake: true } : seaRawInput();
+  }
+
   function seaStep(dt) {
     seaHudAt = Math.max(0, seaHudAt - dt);
     const input = seaEffectiveInput();
+    const rawInput = seaRawInput();
     const result = sea.stepBoat(seaWorld, seaBoat, input, dt);
     seaTrip.dist += result.moved * sea.METERS_PER_UNIT;
     seaTrip.elapsed += dt;
@@ -1931,6 +2041,7 @@
         w.age = 0; w.life = 0.9; w.size = 0.5 + Math.min(0.5, speed / 300);
       }
     }
+    updateFishing(dt, speed, rawInput);
     seaSaveIn -= dt;
     if (seaSaveIn <= 0) { seaSaveIn = 3; persistSea(); }
     // Muelles: hay que llegar físicamente a la zona de atraque y casi parar.
@@ -1938,7 +2049,16 @@
     if (!dock) {
       seaDockWait = 0;
       if (seaCooldown) seaCooldown = '';
-      setSeaHint('');
+      // Cerca de un muelle se avisa de quién espera, para que se vea que se puede hablar.
+      const near = sea.nearestDock(seaWorld, seaBoat);
+      const person = near && near.distance < 340 && !seaFishing ? quests.npc(near.dock.id) : null;
+      const insideZone = sea.fishingZoneAt(seaWorld, seaBoat);
+      let nearZone = null;
+      for (const zone of seaWorld.fishing) if (Math.hypot(zone.x - seaBoat.x, zone.y - seaBoat.y) < zone.radius + 240) nearZone = zone;
+      if (!insideZone) {
+        setSeaHint(person && seaDockStatus[near.dock.id] !== 'locked' ? `💬 ${person.name} · ${near.dock.name}: frena en el círculo para atracar y hablar`
+          : nearZone ? `🎣 ${nearZone.name}: entra en el círculo y frena para pescar` : '');
+      }
     } else if (dock.id !== seaCooldown) {
       const status = seaDockStatus[dock.id];
       if (status === 'locked') {
@@ -1959,6 +2079,8 @@
   // Atraca: cobra el viaje y, en un destino, lo descubre (una sola vez).
   function dockNow(dock) {
     state = 'arrived';
+    cancelFishing();
+    fishButton.classList.add('hidden');
     seaInput.x = 0; seaInput.y = 0; seaInput.brake = false; joyPointer = null;
     joyBase.classList.add('hidden');
     seaBoat.vx = 0; seaBoat.vy = 0;
@@ -2022,6 +2144,7 @@
     seaFrameState.wake = seaWake;
     seaFrameState.dockStatus = seaDockStatus;
     seaFrameState.dockMark = seaDockMark;
+    seaFrameState.fishPhase = seaFishing ? (seaFishing.phase === 'bite' ? 2 : 1) : 0;
     seaFrameState.shield = false;
     ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
     seaView.draw(seaFrameState);
@@ -2215,6 +2338,15 @@
       accept.textContent = status.canAccept && !declined ? 'Aceptar' : 'No disponible';
     }
     const carrying = seaQuests.map(q => { const t = quests.template(q.tpl); return `${quests.kinds[t.kind].icon} ${t.title} → ${dockById(t.to).name}`; });
+    const sellBox = document.getElementById('dialogSell');
+    sellBox.classList.toggle('hidden', dialogDock !== 'aldea');
+    if (dialogDock === 'aldea') {
+      const lines = fishing.species.filter(item => seaBag[item.id] > 0).map(item => `${item.icon} ${item.name} ×${seaBag[item.id]} = ${seaBag[item.id] * item.price} 🪙`);
+      document.getElementById('sellList').textContent = lines.length ? lines.join('\n') : `Hielera vacía (0/${fishing.capacity}). Pesca en los caladeros de la bahía o del lago del norte.`;
+      const sellButton = document.getElementById('sellFish');
+      sellButton.disabled = !lines.length || economyError;
+      sellButton.textContent = lines.length ? `Vender todo (+${fishing.value(seaBag)} 🪙)` : 'Nada que vender';
+    }
     document.getElementById('dialogActive').textContent = carrying.length ? `Llevas (${carrying.length}/${quests.maxActive}): ${carrying.join(' · ')}` : '';
     return available;
   }
@@ -2249,12 +2381,113 @@
   function updateQuestBook() {
     const total = economyError ? 0 : [...currentView().deliveries.values()].reduce((sum, n) => sum + n, 0);
     document.getElementById('quest-total').textContent = String(total);
+    document.getElementById('fish-total').textContent = String(economyError ? 0 : currentView().fishSold);
     for (const person of quests.npcs) {
       const points = repOf(person.id);
       const level = quests.level(points);
       document.getElementById(`rep-${person.id}`).textContent = `${stars(level.stars)} ${level.name} · ${points} puntos`;
     }
   }
+
+
+  // ---- Pesca ----
+  function cancelFishing(message) {
+    if (!seaFishing) return;
+    seaFishing = null;
+    if (message) seaToast(message);
+  }
+
+  // Máquina de la pesca: lanzar (parada) → esperar la picada → recoger en el margen → pez a la hielera.
+  function updateFishing(dt, speed, rawInput) {
+    const zone = sea.fishingZoneAt(seaWorld, seaBoat);
+    const steering = Math.hypot(rawInput.x, rawInput.y) > 0.35;
+    if (seaFishing && (!zone || zone.id !== seaFishing.zone.id || steering)) cancelFishing(zone ? 'Dejaste de pescar' : 'Saliste del caladero');
+    if (seaFishing) {
+      seaFishing.t += dt;
+      if (seaFishing.phase === 'wait' && seaFishing.t >= seaFishing.biteAt) {
+        seaFishing.phase = 'bite';
+        seaFishing.t = 0;
+        seaToast('🎣 ¡PICA! ¡Recoge ya!');
+      } else if (seaFishing.phase === 'bite' && seaFishing.t >= fishing.timing.window) {
+        seaFishing.phase = 'result';
+        seaFishing.t = 0;
+        seaToast('Se escapó... ¡prueba otra vez!');
+      } else if (seaFishing.phase === 'result' && seaFishing.t >= 0.9) seaFishing = null;
+    }
+    const slow = speed <= fishing.timing.maxSpeed;
+    if (!zone || (!slow && !seaFishing)) {
+      fishButton.classList.add('hidden');
+      return;
+    }
+    const full = fishing.count(seaBag) >= fishing.capacity;
+    const phase = seaFishing ? seaFishing.phase : full ? 'full' : 'idle';
+    fishButton.classList.remove('hidden');
+    fishButton.classList.toggle('bite', phase === 'bite');
+    fishButton.disabled = phase === 'result' || phase === 'full';
+    fishButton.textContent = phase === 'bite' ? '¡RECOGER!' : phase === 'wait' ? '🎣 Esperando…' : phase === 'result' ? '🎣 …'
+      : phase === 'full' ? '🧊 Hielera llena' : `🎣 Pescar aquí`;
+    if (!seaFishing && full) setSeaHint('🧊 Hielera llena: véndele el pescado a Tomás en la Aldea Coral');
+    else if (!seaFishing && !steering) setSeaHint(`🎣 ${zone.name}: toca «Pescar aquí»`);
+  }
+
+  function fishAction() {
+    if (mode !== 'sea' || state !== 'playing') return;
+    const zone = sea.fishingZoneAt(seaWorld, seaBoat);
+    if (!zone) return;
+    if (!seaFishing) {
+      if (Math.hypot(seaBoat.vx, seaBoat.vy) > fishing.timing.maxSpeed || fishing.count(seaBag) >= fishing.capacity) return;
+      seaFishing = { zone, phase: 'wait', t: 0, biteAt: fishing.waitTime(Math.random) };
+      setSeaHint('🎣 Esperando a que pique... toca cuando salte la alerta');
+      updateFishing(0, 0, { x: 0, y: 0 });
+      return;
+    }
+    if (seaFishing.phase === 'wait') {
+      seaFishing.phase = 'result';
+      seaFishing.t = 0;
+      seaToast('Tiraste demasiado pronto: el pez se asustó');
+    } else if (seaFishing.phase === 'bite') {
+      const quick = seaFishing.t <= fishing.timing.quick;
+      const spec = fishing.zoneSpecs.find(item => item.id === seaFishing.zone.id);
+      const fish = fishing.roll(spec, Math.random, quick);
+      seaBag[fish.id]++;
+      seaFishing.phase = 'result';
+      seaFishing.t = 0;
+      seaToast(`${fish.icon} ¡${fish.name}! Vale ${fish.price} 🪙${quick ? ' · ¡reflejos rápidos!' : ''}`);
+      persistSea();
+      updateSeaHud(true);
+    }
+    updateFishing(0, 0, { x: 0, y: 0 });
+  }
+
+  // Vender: un evento único por venta (su identificador va guardado con la bolsa).
+  function sellFish() {
+    if (mode !== 'sea' || dialogDock !== 'aldea' || seaDockedAt !== 'aldea') return false;
+    const n = fishing.count(seaBag);
+    if (!n) return false;
+    const amount = fishing.value(seaBag);
+    if (!economyError && currentView().saleIds.has(seaSellId)) {
+      seaBag = fishing.emptyBag();
+      seaSellId = `s${newRunId()}`;
+      persistSea();
+      return false;
+    }
+    if (economyError || !saveEconomy(economyWithEvent({ type: 'earn', amount, sale: { id: seaSellId, n } }))) return false;
+    seaBag = fishing.emptyBag();
+    seaSellId = `s${newRunId()}`;
+    persistSea();
+    updateSeaHud(true);
+    document.getElementById('dialogText').textContent = `¡Buen género! Te pago ${amount} 🪙 por ${n} ${n === 1 ? 'pez' : 'peces'}.`;
+    updateDialog();
+    return true;
+  }
+
+  fishButton.addEventListener('click', fishAction);
+  document.getElementById('sellFish').addEventListener('click', () => {
+    if (!sellFish()) {
+      if (fishing.count(seaBag) === 0) return;
+      document.getElementById('dialogText').textContent = 'No he podido cerrar el trato: inténtalo de nuevo.';
+    }
+  });
 
   talkButton.addEventListener('click', () => openDialog(seaDockedAt));
   document.getElementById('closeDialog').addEventListener('click', closeDialog);
@@ -2397,6 +2630,7 @@
     });
   }
   window.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { window.rioAventuraBack(); return; }
     if (mode === 'sea') { seaKeyChange(event, true); return; }
     if (state !== 'playing') return;
     if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') heldKeys.left = true;
@@ -2434,7 +2668,7 @@
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && settingsReturnState === 'playing') {
       settingsReturnState = 'paused';
-      showOverlay('En pausa', `Llevas ${score} puntos.`, 'Continuar');
+      showOverlay('En pausa', `Llevas ${score} puntos.`, 'Reanudar');
     }
     if (document.hidden && state === 'playing') pauseTrip();
     else if (document.hidden) persistTrip();

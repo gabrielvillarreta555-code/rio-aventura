@@ -157,7 +157,10 @@
       }
     }
 
-    const world = { size: SIZE, tile: TILE, n: N, tiles, docks, piers, rocks, coins, spawn, isLand, biomeAt: null };
+    // Caladeros: círculos de agua donde se puede parar y pescar (los define fishing.js).
+    const fishing = (window.RioFishing ? window.RioFishing.zoneSpecs : []).map(spec => ({
+      id: spec.id, name: spec.name, x: spec.tx * TILE, y: spec.ty * TILE, radius: spec.radius }));
+    const world = { size: SIZE, tile: TILE, n: N, tiles, docks, piers, rocks, coins, spawn, fishing, isLand, biomeAt: null };
     world.biomeAt = (tx, ty) => biomeAt(tx, ty);
     return world;
   }
@@ -340,6 +343,12 @@
     return best ? { dock: best, distance: bestD } : null;
   }
 
+  // Caladero cuya zona contiene a la lancha (o null).
+  function fishingZoneAt(world, boat) {
+    for (const zone of world.fishing) if (Math.hypot(boat.x - zone.x, boat.y - zone.y) < zone.radius) return zone;
+    return null;
+  }
+
   // ---------- Navegación sobre el mapa (para pruebas y pistas) ----------
   // Busca un camino por los mosaicos de agua con `clearance` mosaicos libres alrededor.
   function pathExists(world, from, to, clearance, blocked) {
@@ -378,6 +387,6 @@
 
   window.RioSea = Object.freeze({
     version: 1, TILE, N, SIZE, BOAT_RADIUS, DOCK_RADIUS, DOCK_SPEED, METERS_PER_UNIT, handling, BIOMES,
-    build, biomeAt, contacts, createBoat, stepBoat, dockAt, nearestDock, pathExists, normalizeAngle
+    build, biomeAt, contacts, createBoat, stepBoat, dockAt, nearestDock, fishingZoneAt, pathExists, normalizeAngle
   });
 })();

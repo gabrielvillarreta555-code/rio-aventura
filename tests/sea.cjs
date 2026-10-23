@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const sandbox = { window: {} };
-vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../app/src/main/assets/sea.js'), 'utf8'), sandbox);
+for (const name of ['fishing.js', 'sea.js']) vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../app/src/main/assets', name), 'utf8'), sandbox);
 const sea = sandbox.window.RioSea;
 const world = sea.build();
 
