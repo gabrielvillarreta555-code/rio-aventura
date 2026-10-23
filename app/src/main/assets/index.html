@@ -124,6 +124,18 @@
     #freeSail { min-height: 48px; padding: 10px 14px; border: 1px solid rgba(190,255,240,.5); border-radius: 14px; background: rgba(8,58,78,.9); color: white; font: 700 14px system-ui, sans-serif; }
     @media (max-height: 520px) { #mapArea { right: 300px; bottom: 12px; } #mapInfo { left: auto; right: 12px; top: calc(max(12px, env(safe-area-inset-top)) + 54px); bottom: 12px; width: 280px; overflow-y: auto; } #mapProgress { right: 300px; } }
     .passportCard small b { color: #ffdd79; }
+    #exploreSea { margin-top: 14px; padding: 16px 30px; border: 0; border-radius: 18px; background: linear-gradient(180deg, #fff0a8, #ffcf4a 55%, #ffb82e); color: #3a2308; font: 800 20px system-ui, sans-serif; box-shadow: 0 8px 0 #bf7f1f, 0 14px 22px rgba(0,36,48,.4), inset 0 2px 0 rgba(255,255,255,.7); animation: playPulse 2.4s ease-in-out infinite; }
+    #exploreSea:active { transform: translateY(5px); box-shadow: 0 3px 0 #bf7f1f, 0 6px 12px rgba(0,36,48,.4); animation: none; }
+    #exploreSea.hidden, #exitSea.hidden { display: none; }
+    #exploreSea + #play { margin-top: 18px; padding: 11px 24px; font-size: 16px; box-shadow: 0 5px 0 #bf7f1f, 0 10px 16px rgba(0,36,48,.35), inset 0 2px 0 rgba(255,255,255,.7); animation: none; }
+    #exitSea { margin-top: 14px; min-height: 44px; padding: 10px 20px; border: 1px solid rgba(190,255,240,.45); border-radius: 14px; background: linear-gradient(180deg, rgba(16,96,112,.80), rgba(8,58,78,.86)); color: white; font: 700 15px system-ui, sans-serif; }
+    #seaMap { position: absolute; z-index: 2; right: 14px; top: calc(max(18px, env(safe-area-inset-top)) + 106px); width: 96px; height: 96px; border-radius: 16px; border: 2px solid rgba(255,255,255,.75); box-shadow: 0 6px 14px rgba(0,36,48,.4); pointer-events: none; }
+    #seaMap.hidden, #seaBrake.hidden, #joy.hidden, #seaHint.hidden { display: none; }
+    #joy { position: absolute; z-index: 2; width: 116px; height: 116px; margin: -58px 0 0 -58px; border-radius: 50%; border: 3px solid rgba(255,255,255,.55); background: rgba(8,58,78,.28); pointer-events: none; }
+    #joyKnob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff6c2, #ffcf4a 70%); border: 2px solid rgba(255,255,255,.9); box-shadow: 0 4px 10px rgba(0,36,48,.45); }
+    #seaBrake { position: absolute; z-index: 2; right: 16px; bottom: max(70px, calc(env(safe-area-inset-bottom) + 62px)); width: 84px; height: 84px; border-radius: 50%; border: 3px solid rgba(255,255,255,.85); background: radial-gradient(circle at 35% 30%, #ff9a8a, #d8483f 70%); color: white; font: 800 14px system-ui, sans-serif; box-shadow: 0 8px 16px rgba(0,36,48,.5); touch-action: none; user-select: none; -webkit-user-select: none; }
+    #seaBrake:active { transform: scale(.94); background: radial-gradient(circle at 35% 30%, #ffb4a6, #b8362e 70%); }
+    #seaHint { position: absolute; z-index: 2; left: 16px; right: 16px; bottom: max(150px, calc(env(safe-area-inset-bottom) + 142px)); padding: 10px 14px; border-radius: 14px; background: #183e4aee; border: 1px solid #ffe59a; color: #fff4c1; text-align: center; font: 700 15px system-ui, sans-serif; pointer-events: none; }
     #hint { position: absolute; bottom: max(24px, env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 14px; font-weight: 700; color: #efffff; text-shadow: 0 2px 8px #153a49; pointer-events: none; }
   </style>
 </head>
@@ -134,7 +146,7 @@
     <div id="stageHud" aria-live="off"><div id="stageHudText"><span id="stageLabel">Tramo 1 · Orillas tranquilas</span><span id="stageDistance">0 / 100 m</span></div><div id="stageTrack"><div id="stageProgress"></div></div></div>
     <div id="stageToast" class="hidden" role="status" aria-live="polite"></div>
     <div id="coinHud">🪙 0</div>
-    <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><div id="arrivalCard" class="hidden" role="status" aria-live="polite"><strong id="arrivalTitle"></strong><span id="arrivalText"></span></div><p id="message">Esquiva las rocas, recoge monedas flotantes y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="play" type="button">¡Jugar!</button><button id="openMap" type="button">🗺️ Abrir el mapa</button><button id="finishTrip" type="button" class="hidden">Cobrar y empezar de nuevo</button><button id="openingSettings" type="button">Ajustes</button></div>
+    <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><div id="arrivalCard" class="hidden" role="status" aria-live="polite"><strong id="arrivalTitle"></strong><span id="arrivalText"></span></div><p id="message">Esquiva las rocas, recoge monedas flotantes y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="exploreSea" type="button">⛵ Explorar el mundo</button><button id="play" type="button">¡Jugar!</button><button id="exitSea" type="button" class="hidden">Salir al menú</button><button id="openMap" type="button">🗺️ Abrir el mapa</button><button id="finishTrip" type="button" class="hidden">Cobrar y empezar de nuevo</button><button id="openingSettings" type="button">Ajustes</button></div>
     <div id="rankToast" class="hidden" role="status" aria-live="polite" aria-atomic="true"></div>
     <section id="mapPanel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mapTitle">
       <canvas id="mapCanvas" width="450" height="800" aria-hidden="true"></canvas>
@@ -210,11 +222,17 @@
         <p class="googleNote">Google Play Games: pendiente de configuración. Puedes jugar como invitado sin conexión.</p>
       </div>
     </section>
+    <canvas id="seaMap" class="hidden" width="128" height="128" aria-hidden="true"></canvas>
+    <div id="joy" class="hidden" aria-hidden="true"><div id="joyKnob"></div></div>
+    <button id="seaBrake" class="hidden" type="button" aria-label="Freno">FRENO</button>
+    <div id="seaHint" class="hidden" role="status" aria-live="polite"></div>
     <div id="hint">← Mantén pulsado para remar →</div>
   </main>
   <script src="world.js"></script>
   <script src="art.js"></script>
   <script src="art-themes.js"></script>
+  <script src="sea.js"></script>
+  <script src="sea-view.js"></script>
   <script src="map.js"></script>
   <script src="game.js"></script>
 </body>

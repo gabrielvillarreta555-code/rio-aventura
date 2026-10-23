@@ -41,6 +41,19 @@
   const mapCanvas = document.getElementById('mapCanvas');
   const mapAreaEl = document.getElementById('mapArea');
   const mapHint = document.getElementById('mapHint');
+  const exploreSeaButton = document.getElementById('exploreSea');
+  const exitSeaButton = document.getElementById('exitSea');
+  const seaMapCanvas = document.getElementById('seaMap');
+  const joyBase = document.getElementById('joy');
+  const joyKnob = document.getElementById('joyKnob');
+  const brakeButton = document.getElementById('seaBrake');
+  const seaHint = document.getElementById('seaHint');
+  const stageEl = document.getElementById('stage');
+  const hintEl = document.getElementById('hint');
+  const titleMessage = message.textContent;
+  const sea = window.RioSea;
+  const seaWorld = sea.build();
+  const seaKey = 'rio-aventura-sea-v1';
   const width = canvas.width;
   let height = canvas.height;
   const bestKey = 'rio-aventura-best-v1';
@@ -115,6 +128,28 @@
   const economy = readEconomy();
   let state = 'ready';
   let mapOpen = false;
+  // Modo de juego: 'classic' (río con scroll) o 'sea' (mundo libre con cámara que sigue a la lancha).
+  let mode = 'classic';
+  let seaView = null;
+  let seaBoat = null;
+  let seaCam = { x: 0, y: 0 };
+  let seaTrip = null;
+  let seaTaken = [];
+  let seaWake = [];
+  let seaDockStatus = {};
+  let seaDockWait = 0;
+  let seaCooldown = '';
+  let seaSaveIn = 3;
+  let seaHudAt = 0;
+  let seaMapAt = 0;
+  let seaWakeAt = 0;
+  let seaHintText = '';
+  let joyPointer = null;
+  let joyOrigin = { x: 0, y: 0 };
+  const seaInput = { x: 0, y: 0, brake: false };
+  const seaFrameState = { cam: null, boat: null, boatStyle: null, taken: [], wake: [], dockStatus: {}, shield: false };
+  let seaMapCtx = null;
+  const seaKeys = { up: false, down: false, left: false, right: false };
   let mapSelected = 'puerto';
   let mapView = null;
   let lastMapDraw = 0;
@@ -516,7 +551,8 @@
       coinHud.textContent = '🪙 !';
       return;
     }
-    hudReward = state === 'playing' ? tripReward(runDistance, score, collectedCoins) : -1;
+    hudReward = state === 'playing' ? (mode === 'sea' ? tripReward(seaTrip.dist, seaTrip.score, seaTrip.pickups)
+      : tripReward(runDistance, score, collectedCoins)) : -1;
     const tripText = hudReward < 0 ? '' : ` · viaje +${hudReward}${hudReward >= maxTripReward ? ' (máx.)' : ''}`;
     coinHud.textContent = `🪙 ${currentView().coins}${tripText}`;
   }
@@ -794,7 +830,9 @@
     else finishTripButton.classList.add('hidden');
     arrivalCard.classList.add('hidden');
     // El mapa solo se abre entre viajes: no con un viaje en pausa ni uno por retomar.
-    openMapButton.classList.toggle('hidden', Boolean(interrupted) || state === 'paused');
+    openMapButton.classList.toggle('hidden', mode === 'sea' || Boolean(interrupted) || state === 'paused');
+    exploreSeaButton.classList.toggle('hidden', mode === 'sea' || Boolean(interrupted) || state === 'paused');
+    exitSeaButton.classList.toggle('hidden', mode !== 'sea');
     overlay.classList.remove('hidden');
   }
 
@@ -822,6 +860,30 @@
     closeTrip(true);
   }
 
+  // Textos comunes al cerrar un viaje (clásico o mundo libre).
+  function tripNotes(result) {
+    const rankReward = result.newRanks.reduce((sum, rank) => sum + rank.reward, 0);
+    const rankMessage = result.newRanks.length
+      ? ` ¡Nuevo rango: ${result.newRanks[result.newRanks.length - 1].name}! Premio extra: ${rankReward} monedas.` : '';
+    const dailyMessage = result.newMissions.length
+      ? ` Misiones diarias: +${result.newMissions.reduce((sum, mission) => sum + mission.reward, 0)} monedas.` : '';
+    const achievementMessage = result.newAchievements.length
+      ? ` Nuevo logro: ${result.newAchievements.map(item => item.name).join(', ')}.` : '';
+    const coinMessage = result.economySaved ? `ganaste ${result.earned} monedas de viaje` : `tienes ${result.earned} monedas de viaje pendientes`;
+    const warning = result.complete ? ''
+      : economyError ? ' No se pueden guardar las monedas: restaura una copia en Ajustes y este viaje se completará.'
+      : ' No se pudo guardar todo el progreso. Se reintentará al empezar otro viaje; no desinstales la app.';
+    return { rankMessage, dailyMessage, achievementMessage, coinMessage, warning };
+  }
+
+  function showArrivalCard(place, arrival) {
+    if (!arrival || !arrival.first) return;
+    document.getElementById('arrivalTitle').textContent = `🗺️ ¡${place} descubierto!`;
+    document.getElementById('arrivalText').textContent = `Premio de primera visita: +${arrival.reward} 🪙.` +
+      (arrival.opened.length ? ` Rutas nuevas: ${arrival.opened.map(id => world.nodeById(id).name).join(', ')}.` : ' Ya conoces todos los caminos de este lugar.');
+    arrivalCard.classList.remove('hidden');
+  }
+
   // Cierra el viaje: por perder las vidas (finish) o por llegar al destino (arrive).
   function closeTrip(arrived) {
     state = arrived ? 'arrived' : 'over';
@@ -834,29 +896,14 @@
       route: activeRoute ? activeRoute.id : '', arrived: arrived && Boolean(activeRoute) };
     const result = settlePending(run).get(run.id);
     if (result.complete || readPendingRuns().some(item => item.id === run.id)) clearStorageKey(tripKey);
-    const rankReward = result.newRanks.reduce((sum, rank) => sum + rank.reward, 0);
-    const rankMessage = result.newRanks.length
-      ? ` ¡Nuevo rango: ${result.newRanks[result.newRanks.length - 1].name}! Premio extra: ${rankReward} monedas.` : '';
-    const dailyMessage = result.newMissions.length
-      ? ` Misiones diarias: +${result.newMissions.reduce((sum, mission) => sum + mission.reward, 0)} monedas.` : '';
-    const achievementMessage = result.newAchievements.length
-      ? ` Nuevo logro: ${result.newAchievements.map(item => item.name).join(', ')}.` : '';
-    const coinMessage = result.economySaved ? `ganaste ${result.earned} monedas de viaje` : `tienes ${result.earned} monedas de viaje pendientes`;
-    const warning = result.complete ? ''
-      : economyError ? ' No se pueden guardar las monedas: restaura una copia en Ajustes y este viaje se completará.'
-      : ' No se pudo guardar todo el progreso. Se reintentará al empezar otro viaje; no desinstales la app.';
+    const { rankMessage, dailyMessage, achievementMessage, coinMessage, warning } = tripNotes(result);
     if (arrived) {
       const place = activeRoute.destination;
       const arrival = result.arrival;
       showOverlay(`¡Llegaste a<br>${place}!`,
         `Lograste ${score} puntos y ${coinMessage}. Tu récord es ${result.best}.${rankMessage}${dailyMessage}${achievementMessage}${warning}`,
         'Navegar otra vez');
-      if (arrival && arrival.first) {
-        document.getElementById('arrivalTitle').textContent = `🗺️ ¡${place} descubierto!`;
-        document.getElementById('arrivalText').textContent = `Premio de primera visita: +${arrival.reward} 🪙.` +
-          (arrival.opened.length ? ` Rutas nuevas: ${arrival.opened.map(id => world.nodeById(id).name).join(', ')}.` : ' Ya conoces todos los caminos de este lugar.');
-        arrivalCard.classList.remove('hidden');
-      }
+      showArrivalCard(place, arrival);
     } else {
       showOverlay('¡Fin del<br>viaje!',
         `Lograste ${score} puntos, recogiste ${collectedCoins} monedas flotantes y ${coinMessage}. Tu récord es ${result.best}.${rankMessage}${dailyMessage}${achievementMessage}${warning}`,
@@ -899,7 +946,8 @@
     heldKeys.left = false;
     heldKeys.right = false;
     pause.textContent = '▶';
-    showOverlay('En pausa', `Llevas ${score} puntos.`, 'Continuar');
+    showOverlay('En pausa', mode === 'sea' ? `Llevas ${Math.floor(seaTrip.dist)} m y ${seaTrip.pickups} monedas sin cobrar: se cobran al llegar a un muelle.` : `Llevas ${score} puntos.`, 'Continuar');
+    if (mode === 'sea') { seaInput.x = 0; seaInput.y = 0; seaInput.brake = false; joyPointer = null; joyBase.classList.add('hidden'); }
     persistTrip();
   }
 
@@ -917,7 +965,8 @@
         !numberWithin(source.elapsed, 1000000)) return null;
     const route = typeof source.route === 'string' && world.routeById(source.route) ? source.route : '';
     return { id: source.id, score: source.score, lives: source.lives, pickups: source.pickups,
-      distance: source.distance, elapsed: source.elapsed, route, arrived: Boolean(route) && source.arrived === true };
+      distance: source.distance, elapsed: source.elapsed, route, arrived: Boolean(route) && source.arrived === true,
+      sea: source.sea === true };
   }
 
   function readTrip() {
@@ -933,6 +982,7 @@
 
   // Guarda el viaje en curso para poder retomarlo si Android cierra la app.
   function persistTrip() {
+    if (mode === 'sea') return persistSea();
     if (!tripId || (state !== 'playing' && state !== 'paused') || lives < 1) return false;
     return saveObject(tripKey, { version: 1, id: tripId, score, lives, pickups: collectedCoins,
       distance: Math.round(runDistance * 10) / 10, elapsed: Math.round(elapsed * 10) / 10,
@@ -960,7 +1010,8 @@
       newRanks: [], newMissions: [], newAchievements: [], economySaved: true, statsSaved: true, bestSaved: true };
     const distance = safeCount(Math.round(run.distance));
     const route = run.route ? world.routeById(run.route) : null;
-    const arrived = Boolean(route && run.arrived && run.distance >= route.distance);
+    // En el mundo libre se llega físicamente a un muelle, sin una distancia fija de ruta.
+    const arrived = Boolean(route && run.arrived && (run.sea || run.distance >= route.distance));
     const discoveredBefore = economyError ? 0 : currentView().discovered.size;
     const statsApplied = stats.appliedRuns.includes(run.id);
     const projected = statsApplied ? { ...stats } : {
@@ -1245,6 +1296,7 @@
     scene.height = height;
     art.resize(height, renderScale);
     art.setQuality(profile.quality);
+    if (seaView) { seaView.resize(height, renderScale); seaView.warm(); }
   }
 
   function render() {
@@ -1272,6 +1324,7 @@
   function applyGraphicsTier() {
     const tier = currentTier();
     art.setDetail(tier.detail);
+    if (seaView) seaView.setDetail(tier.detail);
     if (tier.scale !== renderScale) {
       renderScale = tier.scale;
       applyCanvasSize();
@@ -1326,6 +1379,11 @@
     const dt = Math.min(0.05, interval / 1000 || 0);
     lastFrame = now;
     if (state === 'playing' && !document.hidden) adaptGraphics(interval);
+    if (mode === 'sea') {
+      seaFrame(now, dt);
+      requestAnimationFrame(frame);
+      return;
+    }
     step(dt);
     scene.cameraX = cameraX;
     scene.stageIndex = stageIndex;
@@ -1536,6 +1594,358 @@
     return false;
   };
 
+
+  // ---- Mundo libre ----
+  const zoneNames = { tropical: 'Bahía y río', aldea: 'Costa de la aldea', manglar: 'Manglar', cascada: 'Tierras altas',
+    ruinas: 'Lago norte', laguna: 'Valle luminoso' };
+  const compass = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+
+  function refreshSeaStatus() {
+    for (const dock of seaWorld.docks) {
+      seaDockStatus[dock.id] = dock.kind === 'port' ? 'open' : nodeState(world.nodeById(dock.id));
+    }
+  }
+
+  function freshSeaTrip() {
+    return { id: newRunId(), dist: 0, pickups: 0, score: 0, elapsed: 0, passed: new Set() };
+  }
+
+  function readSeaSave() {
+    const saved = readObject(seaKey);
+    if (saved.version !== 1) return null;
+    const inRange = (value, max) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max;
+    if (!inRange(saved.x, seaWorld.size) || !inRange(saved.y, seaWorld.size) || typeof saved.h !== 'number' || !Number.isFinite(saved.h)) return null;
+    // Una posición dentro de tierra (archivo dañado) se descarta: se vuelve al puerto.
+    if (sea.contacts(seaWorld, saved.x, saved.y, sea.BOAT_RADIUS, []).length) return null;
+    const ids = (list, max) => Array.isArray(list) ? list.filter(id => Number.isInteger(id) && id >= 0 && id < max) : [];
+    const trip = { id: validRunId(saved.id) && !runIsApplied(saved.id) ? saved.id : newRunId(), dist: 0, pickups: 0, score: 0, elapsed: 0,
+      passed: new Set() };
+    if (trip.id === saved.id) {
+      trip.dist = inRange(saved.dist, 1e6) ? saved.dist : 0;
+      trip.pickups = intWithin(saved.pickups, 100000) ? saved.pickups : 0;
+      trip.score = intWithin(saved.score, 1000000) ? saved.score : 0;
+      trip.elapsed = inRange(saved.elapsed, 1e6) ? saved.elapsed : 0;
+      for (const id of ids(saved.passed, seaWorld.rocks.length)) trip.passed.add(id);
+    }
+    return { x: saved.x, y: saved.y, h: saved.h, trip, taken: trip.id === saved.id ? ids(saved.taken, seaWorld.coins.length) : [] };
+  }
+
+  function persistSea() {
+    if (!seaBoat || !seaTrip) return false;
+    return saveObject(seaKey, { version: 1, x: Math.round(seaBoat.x * 10) / 10, y: Math.round(seaBoat.y * 10) / 10,
+      h: Math.round(seaBoat.heading * 1000) / 1000, id: seaTrip.id, dist: Math.round(seaTrip.dist * 10) / 10,
+      pickups: seaTrip.pickups, score: seaTrip.score, elapsed: Math.round(seaTrip.elapsed * 10) / 10,
+      passed: [...seaTrip.passed], taken: seaTaken.flatMap((value, id) => value ? [id] : []) });
+  }
+
+  function seaSetUi(on) {
+    seaMapCanvas.classList.toggle('hidden', !on);
+    brakeButton.classList.toggle('hidden', !on);
+    if (!on) { seaHint.classList.add('hidden'); joyBase.classList.add('hidden'); }
+    hintEl.textContent = on ? 'Arrastra para navegar · FRENO para parar' : '← Mantén pulsado para remar →';
+    stageToast.classList.add('hidden');
+  }
+
+  function seaFollow(dt, snap) {
+    const k = snap ? 1 : 1 - Math.exp(-4.5 * dt);
+    const tx = seaBoat.x + seaBoat.vx * 0.45 - 225;
+    const ty = seaBoat.y + seaBoat.vy * 0.45 - height * 0.5;
+    seaCam.x += (Math.max(0, Math.min(seaWorld.size - 450, tx)) - seaCam.x) * k;
+    seaCam.y += (Math.max(0, Math.min(seaWorld.size - height, ty)) - seaCam.y) * k;
+  }
+
+  function enterSea() {
+    if (mode === 'sea' || interrupted) return;
+    settlePending();
+    mode = 'sea';
+    if (!seaView) seaView = window.RioSeaView.create({ canvas, ctx, art, doc: document, world: seaWorld });
+    seaView.resize(height, renderScale);
+    seaView.setDetail(currentTier().detail);
+    seaView.warm();
+    const saved = readSeaSave();
+    const spawn = seaWorld.spawn;
+    seaBoat = sea.createBoat(saved ? saved.x : spawn.x, saved ? saved.y : spawn.y, saved ? saved.h : spawn.heading);
+    seaTrip = saved ? saved.trip : freshSeaTrip();
+    seaTaken = [];
+    if (saved) for (const id of saved.taken) seaTaken[id] = true;
+    seaWake = [];
+    for (let i = 0; i < 24; i++) seaWake.push({ x: 0, y: 0, age: 1, life: 1, size: 1 });
+    seaInput.x = 0; seaInput.y = 0; seaInput.brake = false;
+    seaDockWait = 0;
+    seaCooldown = '';
+    seaSaveIn = 3;
+    seaHudAt = 0;
+    refreshSeaStatus();
+    seaFollow(0, true);
+    seaView.prewarm(seaCam);
+    seaSetUi(true);
+    state = 'playing';
+    pause.textContent = 'Ⅱ';
+    overlay.classList.add('hidden');
+    updateSeaHud(true);
+    updateCoinHud();
+  }
+
+  function exitSea() {
+    if (mode !== 'sea') return;
+    persistSea();
+    mode = 'classic';
+    seaSetUi(false);
+    seaInput.x = 0; seaInput.y = 0; seaInput.brake = false; joyPointer = null;
+    setActiveRoute(null);
+    launchRouteId = null;
+    reset();
+    state = 'ready';
+    arrivalCard.classList.add('hidden');
+    showOverlay('Río<br>Aventura', titleMessage, '¡Jugar!');
+    updateCoinHud();
+  }
+
+  function resumeSea() {
+    state = 'playing';
+    seaDockWait = 0;
+    overlay.classList.add('hidden');
+    pause.textContent = 'Ⅱ';
+    updateSeaHud(true);
+    updateCoinHud();
+  }
+
+  function setSeaHint(text) {
+    if (text === seaHintText) return;
+    seaHintText = text;
+    seaHint.textContent = text;
+    seaHint.classList.toggle('hidden', !text);
+  }
+
+  function updateSeaHud(force) {
+    if (!force && seaHudAt > 0) return;
+    seaHudAt = 0.25;
+    const found = economyError ? 0 : currentView().discovered.size;
+    scoreEl.textContent = `🪙 ${seaTrip.pickups} · ${Math.floor(seaTrip.dist)} m`;
+    livesEl.textContent = `🧭 ${found}/${world.destinations.length}`;
+    let target = null;
+    for (const dock of seaWorld.docks) {
+      if (seaDockStatus[dock.id] !== 'open' || dock.kind === 'port') continue;
+      const d = Math.hypot(dock.x - seaBoat.x, dock.y - seaBoat.y);
+      if (!target || d < target.d) target = { dock, d };
+    }
+    if (!target) {
+      const home = seaWorld.docks[0];
+      target = { dock: home, d: Math.hypot(home.x - seaBoat.x, home.y - seaBoat.y) };
+    }
+    const angle = Math.atan2(target.dock.x - seaBoat.x, -(target.dock.y - seaBoat.y));
+    const arrow = compass[(Math.round(angle / (Math.PI / 4)) + 8) % 8];
+    stageLabel.textContent = `Explorando · ${zoneNames[seaWorld.biomeAt(Math.floor(seaBoat.x / sea.TILE), Math.floor(seaBoat.y / sea.TILE))]}`;
+    stageDistance.textContent = `${arrow} ${target.dock.name.split(' ')[0]} · ${Math.round(target.d * sea.METERS_PER_UNIT)} m`;
+    stageProgress.style.width = `${found / world.destinations.length * 100}%`;
+    updateCoinHud();
+  }
+
+  function seaEffectiveInput() {
+    if (joyPointer !== null) return seaInput;
+    const x = Number(seaKeys.right) - Number(seaKeys.left);
+    const y = Number(seaKeys.down) - Number(seaKeys.up);
+    const length = Math.hypot(x, y) || 1;
+    return { x: x / length, y: y / length, brake: seaInput.brake };
+  }
+
+  function seaStep(dt) {
+    seaHudAt = Math.max(0, seaHudAt - dt);
+    const input = seaEffectiveInput();
+    const result = sea.stepBoat(seaWorld, seaBoat, input, dt);
+    seaTrip.dist += result.moved * sea.METERS_PER_UNIT;
+    seaTrip.elapsed += dt;
+    seaFollow(dt, false);
+    const speed = Math.hypot(seaBoat.vx, seaBoat.vy);
+    for (const coin of seaWorld.coins) {
+      if (seaTaken[coin.id] || Math.abs(coin.x - seaBoat.x) > 30 || Math.abs(coin.y - seaBoat.y) > 30) continue;
+      if (Math.hypot(coin.x - seaBoat.x, coin.y - seaBoat.y) < 28) {
+        seaTaken[coin.id] = true;
+        seaTrip.pickups++;
+        updateSeaHud(true);
+      }
+    }
+    // Una roca rozada sin chocar cuenta como esquiva (una vez por roca y viaje).
+    if (speed > 70) {
+      for (const rock of seaWorld.rocks) {
+        if (seaTrip.passed.has(rock.id)) continue;
+        const d = Math.hypot(rock.x - seaBoat.x, rock.y - seaBoat.y);
+        if (d > rock.r + sea.BOAT_RADIUS + 3 && d < rock.r + sea.BOAT_RADIUS + 34) { seaTrip.passed.add(rock.id); seaTrip.score++; }
+      }
+    }
+    // Estela: espuma que se queda en el agua detrás de la lancha.
+    for (const w of seaWake) if (w.age < w.life) w.age += dt;
+    seaWakeAt -= dt;
+    if (speed > 35 && seaWakeAt <= 0) {
+      seaWakeAt = 0.07;
+      const w = seaWake.find(item => item.age >= item.life);
+      if (w) {
+        w.x = seaBoat.x - Math.sin(seaBoat.heading) * 22 + (Math.random() - 0.5) * 6;
+        w.y = seaBoat.y + Math.cos(seaBoat.heading) * 22 + (Math.random() - 0.5) * 6;
+        w.age = 0; w.life = 0.9; w.size = 0.5 + Math.min(0.5, speed / 300);
+      }
+    }
+    seaSaveIn -= dt;
+    if (seaSaveIn <= 0) { seaSaveIn = 3; persistSea(); }
+    // Muelles: hay que llegar físicamente a la zona de atraque y casi parar.
+    const dock = sea.dockAt(seaWorld, seaBoat);
+    if (!dock) {
+      seaDockWait = 0;
+      if (seaCooldown) seaCooldown = '';
+      setSeaHint('');
+    } else if (dock.id !== seaCooldown) {
+      const status = seaDockStatus[dock.id];
+      if (status === 'locked') {
+        const missing = economyError ? ['El progreso no está disponible'] : world.status(dock.id, worldContext()).missing;
+        setSeaHint(`🔒 ${dock.name} · ${missing.join(' · ')}`);
+      } else if (speed > sea.DOCK_SPEED) {
+        seaDockWait = 0;
+        setSeaHint(`⚓ ${dock.name}: frena para atracar`);
+      } else {
+        seaDockWait += dt;
+        setSeaHint(`⚓ Atracando en ${dock.name}…`);
+        if (seaDockWait >= 0.5) dockNow(dock);
+      }
+    }
+    updateSeaHud(false);
+  }
+
+  // Atraca: cobra el viaje y, en un destino, lo descubre (una sola vez).
+  function dockNow(dock) {
+    state = 'arrived';
+    seaInput.x = 0; seaInput.y = 0; seaInput.brake = false; joyPointer = null;
+    joyBase.classList.add('hidden');
+    seaBoat.vx = 0; seaBoat.vy = 0;
+    setSeaHint('');
+    seaCooldown = dock.id;
+    const isPort = dock.kind === 'port';
+    const meters = Math.floor(seaTrip.dist);
+    const nothing = seaTrip.dist < 15 && seaTrip.pickups === 0 && seaTrip.score === 0;
+    if (isPort && nothing) {
+      showOverlay('⚓ Puerto<br>Palmar', 'Estás en casa. Elige un rumbo, recoge monedas y atraca en un muelle para cobrar el viaje y descubrir lugares.', 'Seguir explorando');
+      persistSea();
+      return;
+    }
+    const run = { id: seaTrip.id, score: seaTrip.score, lives: 3, pickups: seaTrip.pickups,
+      distance: Math.round(seaTrip.dist * 10) / 10, elapsed: Math.round(seaTrip.elapsed * 10) / 10,
+      route: isPort ? '' : dock.id, arrived: !isPort, sea: true };
+    const result = settlePending(run).get(run.id);
+    const { rankMessage, dailyMessage, achievementMessage, coinMessage, warning } = tripNotes(result);
+    const heading = isPort ? '⚓ Puerto Palmar<br>¡Buen viaje!' : `¡Atracaste en<br>${dock.name}!`;
+    showOverlay(heading,
+      `Recorriste ${meters} m y recogiste ${run.pickups} monedas flotantes: ${coinMessage}. Tu récord es ${result.best}.${rankMessage}${dailyMessage}${achievementMessage}${warning}`,
+      'Seguir explorando');
+    if (!isPort) showArrivalCard(dock.name, result.arrival);
+    showRankToast(result.newRanks);
+    if (result.complete || readPendingRuns().some(item => item.id === run.id)) {
+      // El viaje queda cobrado (o en el diario de pendientes): empieza uno nuevo desde este muelle.
+      seaTrip = freshSeaTrip();
+      seaTaken = [];
+    }
+    refreshSeaStatus();
+    persistSea();
+    updateSeaHud(true);
+  }
+
+  function seaRender(now) {
+    const style = boats.find(item => item.id === economy.selected) || boats[0];
+    seaFrameState.cam = seaCam;
+    seaFrameState.boat = seaBoat;
+    seaFrameState.boatStyle = style;
+    seaFrameState.taken = seaTaken;
+    seaFrameState.wake = seaWake;
+    seaFrameState.dockStatus = seaDockStatus;
+    seaFrameState.shield = false;
+    ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+    seaView.draw(seaFrameState);
+    if (now - seaMapAt >= 66) {
+      seaMapAt = now;
+      seaView.drawMinimap(seaMapContext(), seaMapCanvas.width, seaFrameState);
+    }
+  }
+
+  function seaMapContext() {
+    if (!seaMapCtx) seaMapCtx = seaMapCanvas.getContext('2d');
+    return seaMapCtx;
+  }
+
+  function seaFrame(now, dt) {
+    if (state === 'playing' && !document.hidden) seaStep(dt);
+    seaView.update(dt);
+    if (rankToastTimer > 0) {
+      rankToastTimer = Math.max(0, rankToastTimer - dt);
+      if (rankToastTimer === 0) rankToast.classList.add('hidden');
+    }
+    // Con la partida detenida (pausa, muelle) basta redibujar de vez en cuando.
+    const idle = state !== 'playing' && now - lastRender < 100;
+    if (!document.hidden && !idle && (profile.quality === 'high' || now - lastRender >= 1000 / 30 - 1)) {
+      seaRender(now);
+      lastRender = now;
+      if (state === 'playing') {
+        if (fpsWindowStart === 0) fpsWindowStart = now;
+        fpsFrames++;
+        if (now - fpsWindowStart >= 1000) {
+          measuredFps = Math.round(fpsFrames * 1000 / (now - fpsWindowStart));
+          fpsWindowStart = now;
+          fpsFrames = 0;
+        }
+      } else { fpsWindowStart = 0; fpsFrames = 0; }
+    } else if (document.hidden) { fpsWindowStart = 0; fpsFrames = 0; }
+  }
+
+  // Joystick virtual flotante: el dedo fija el centro y el arrastre da la dirección y la fuerza.
+  const joyRadius = 58;
+  function seaPointerDown(event) {
+    if (state !== 'playing' || joyPointer !== null) return;
+    joyPointer = event.pointerId;
+    if (canvas.setPointerCapture) canvas.setPointerCapture(event.pointerId);
+    joyOrigin = { x: event.clientX, y: event.clientY };
+    const rect = stageEl.getBoundingClientRect();
+    joyBase.style.left = `${event.clientX - rect.left}px`;
+    joyBase.style.top = `${event.clientY - rect.top}px`;
+    joyKnob.style.transform = 'translate(0px, 0px)';
+    joyBase.classList.remove('hidden');
+    seaInput.x = 0;
+    seaInput.y = 0;
+  }
+
+  function seaPointerMove(event) {
+    if (event.pointerId !== joyPointer) return;
+    const dx = event.clientX - joyOrigin.x;
+    const dy = event.clientY - joyOrigin.y;
+    const length = Math.hypot(dx, dy);
+    const k = length > joyRadius ? joyRadius / length : 1;
+    seaInput.x = dx * k / joyRadius;
+    seaInput.y = dy * k / joyRadius;
+    joyKnob.style.transform = `translate(${Math.round(dx * k)}px, ${Math.round(dy * k)}px)`;
+  }
+
+  function seaPointerUp(event) {
+    if (event.pointerId !== joyPointer) return;
+    joyPointer = null;
+    seaInput.x = 0;
+    seaInput.y = 0;
+    joyBase.classList.add('hidden');
+  }
+
+  function seaKeyChange(event, down) {
+    const key = event.key.toLowerCase();
+    if (key === 'arrowup' || key === 'w') seaKeys.up = down;
+    else if (key === 'arrowdown' || key === 's') seaKeys.down = down;
+    else if (key === 'arrowleft' || key === 'a') seaKeys.left = down;
+    else if (key === 'arrowright' || key === 'd') seaKeys.right = down;
+    else if (key === ' ' || key === 'shift') seaInput.brake = down;
+  }
+
+  for (const name of ['pointerdown']) {
+    brakeButton.addEventListener(name, event => { seaInput.brake = true; if (event.preventDefault) event.preventDefault(); });
+  }
+  for (const name of ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture']) {
+    brakeButton.addEventListener(name, () => { seaInput.brake = false; });
+  }
+  exploreSeaButton.addEventListener('click', enterSea);
+  exitSeaButton.addEventListener('click', exitSea);
+
   settingsButton.addEventListener('click', openSettings);
   openingSettings.addEventListener('click', openSettings);
   closeSettingsButton.addEventListener('click', closeSettings);
@@ -1636,35 +2046,46 @@
   });
 
   canvas.addEventListener('pointerdown', event => {
+    if (mode === 'sea') { seaPointerDown(event); return; }
     if (state !== 'playing' || activePointerId !== null) return;
     activePointerId = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
     direction = pointerDirection(event);
   });
   canvas.addEventListener('pointermove', event => {
+    if (mode === 'sea') { seaPointerMove(event); return; }
     if (state === 'playing' && event.pointerId === activePointerId) direction = pointerDirection(event);
   });
   for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) {
     canvas.addEventListener(name, event => {
+      if (mode === 'sea') { seaPointerUp(event); return; }
       if (event.pointerId !== activePointerId) return;
       activePointerId = null;
       restoreKeyboardDirection();
     });
   }
   window.addEventListener('keydown', event => {
+    if (mode === 'sea') { seaKeyChange(event, true); return; }
     if (state !== 'playing') return;
     if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') heldKeys.left = true;
     if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') heldKeys.right = true;
     if (activePointerId === null) restoreKeyboardDirection();
   });
   window.addEventListener('keyup', event => {
+    if (mode === 'sea') { seaKeyChange(event, false); return; }
     if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') heldKeys.left = false;
     if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') heldKeys.right = false;
     if (activePointerId === null) restoreKeyboardDirection();
   });
   finishTripButton.addEventListener('click', cashInterruptedTrip);
   play.addEventListener('click', () => {
-    if (interrupted) {
+    if (mode === 'sea') {
+      if (state === 'paused') {
+        state = 'playing';
+        overlay.classList.add('hidden');
+        pause.textContent = 'Ⅱ';
+      } else resumeSea();
+    } else if (interrupted) {
       resumeInterruptedTrip();
     } else if (state === 'paused') {
       state = 'playing';
