@@ -53,6 +53,8 @@ const element = id => {
     textContent: '',
     value: '',
     style: {},
+    attributes: {},
+    setAttribute(name, value) { this.attributes[name] = value; },
     select() { this.selected = true; },
     classList: {
       add(name) { classes.add(name); },
@@ -129,14 +131,21 @@ assert(operations.filter(name => name === 'bezierCurveTo').length > 5, 'moving w
 assert(operations.filter(name => name === 'arc').length > 20, 'layered riverside trees should be drawn');
 assert.equal(waterGradientCreates, 1, 'the water gradient should be reused between frames');
 const html = fs.readFileSync('app/src/main/assets/index.html', 'utf8');
-for (const id of ['settings', 'openingSettings', 'settingsPanel', 'profileName', 'avatar', 'quality', 'performanceInfo', 'bestScore', 'totalRuns', 'totalDodged', 'legacyDodged', 'playerTag', 'backupText', 'exportProgress', 'importProgress', 'stageLabel', 'stageDistance', 'stageProgress', 'stageToast', 'coinHud', 'garageCoins', 'boat-classic', 'boat-coral', 'boat-storm', 'rank-explorer', 'rank-navigator', 'rank-captain']) {
+for (const id of ['settings', 'openingSettings', 'settingsPanel', 'profileName', 'avatar', 'quality', 'performanceInfo', 'bestScore', 'totalRuns', 'totalDodged', 'legacyDodged', 'playerTag', 'backupText', 'exportProgress', 'importProgress', 'stageLabel', 'stageDistance', 'stageProgress', 'stageToast', 'rankToast', 'coinHud', 'garageCoins', 'boat-classic', 'boat-coral', 'boat-storm', 'boat-breeze', 'boat-aurora', 'rank-explorer', 'rank-navigator', 'rank-captain', 'rankProgressText', 'rankProgressTrack', 'rankProgressFill', 'dailyDate', 'daily-distance', 'daily-dodged', 'daily-pickups', 'achievement-first', 'achievement-regular', 'achievement-dodger', 'achievement-traveler']) {
   assert(html.includes(`id="${id}"`), `the settings screen needs ${id}`);
 }
+assert(html.includes('prefers-reduced-motion: reduce') && html.includes('id="rankToast" class="hidden" role="status" aria-live="polite"'),
+  'rank celebration should be announced accessibly and respect reduced motion');
 events.get('settings:click')();
 assert(!elements.get('settingsPanel').classList.contains('hidden'), 'settings should open');
 assert(/FPS dibujados/.test(elements.get('performanceInfo').textContent), 'settings should show a gameplay FPS sample');
 assert.equal(elements.get('profileName').value, 'Invitado', 'a new player starts as a guest');
 assert.equal(elements.get('bestScore').textContent, '42', 'the existing record should remain visible');
+assert.equal(elements.get('rankProgressFill').style.width, '0%', 'new players should see empty rank progress');
+assert.equal(elements.get('rankProgressTrack').attributes['aria-valuenow'], '0', 'rank progress should expose its value accessibly');
+assert.equal(elements.get('boat-breeze').disabled, true, 'special boats should start locked');
+events.get('boat-breeze:click')();
+assert(elements.get('garageNotice').textContent.includes('Desbloquea'), 'locked special boats cannot be equipped by direct clicks');
 events.get('boat-coral:click')();
 assert(elements.get('garageNotice').textContent.includes('Faltan'), 'boats should not be purchasable without coins');
 elements.get('profileName').value = 'Gabriel';
@@ -181,14 +190,17 @@ assert.equal(stats.version, 2, 'accurate dodges need the new statistics format')
 assert.equal(stats.dodged, 0, 'obstacles that hit the boat must not count as dodged');
 assert.equal(storage.get('rio-aventura-best-v1'), '42', 'new statistics must not erase the old record');
 const firstEconomy = JSON.parse(storage.get('rio-aventura-economy-v1') || 'null');
-assert(firstEconomy && firstEconomy.events.length === 1, 'one finished run should grant one coin award');
-assert(firstEconomy.events[0].amount > 0, 'the run award must be positive');
+assert(firstEconomy && firstEconomy.events.filter(event => event.run).length === 1,
+  'one finished run should grant one coin award');
+assert(firstEconomy.events.find(event => event.run).amount > 0, 'the run award must be positive');
 for (let time = 40000; time < 40500; time += 50) nextFrame(time);
-assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, 1, 'a finished run must not grant coins twice');
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, firstEconomy.events.length,
+  'a finished run must not grant coins twice');
 events.get('openingSettings:click')();
 assert.equal(elements.get('totalRuns').textContent, '1', 'settings should show saved trips');
 assert.equal(elements.get('totalDistance').textContent, `${stats.distance} m`, 'settings should show saved distance');
 assert.equal(elements.get('totalDodged').textContent, '0', 'settings should show confirmed dodges only');
+assert.equal(elements.get('achievement-first').textContent, 'Desbloqueado', 'first finished trip unlocks a permanent achievement');
 events.get('exportProgress:click')();
 const backup = elements.get('backupText').value;
 const decodedBackup = JSON.parse(backup);
@@ -196,7 +208,7 @@ assert.equal(decodedBackup.format, 'rio-aventura-progress-v2', 'manual backup ne
 assert.equal(decodedBackup.profile.name, 'Gabriel', 'manual backup should include the guest name');
 assert.equal(decodedBackup.best, 42, 'manual backup should include the original record');
 assert.equal(decodedBackup.stats.runs, 1, 'manual backup should include completed trips');
-assert.equal(decodedBackup.economy.events.length, 1, 'manual backup should include coin awards');
+assert.equal(decodedBackup.economy.events.length, firstEconomy.events.length, 'manual backup should include coin awards');
 assert(elements.get('backupText').selected, 'backup text should be selected for copying');
 elements.get('backupText').value = '{invalid';
 events.get('importProgress:click')();
@@ -269,6 +281,7 @@ assert.equal(elements.get('totalRuns').textContent, '5', 'legacy trip count shou
 assert.equal(elements.get('garageCoins').textContent, `${coinsAfterPurchase} monedas`, 'the wallet should survive a fresh launch');
 assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'storm', 'the selected boat should survive a fresh launch');
 assert.equal(elements.get('totalDodged').textContent, '0', 'old points must not be presented as verified dodges');
+assert.equal(elements.get('achievement-dodger').textContent, '0/25', 'legacy estimated points must not unlock verified-dodge achievements');
 assert.equal(elements.get('legacyDodged').textContent, '17', 'old estimated points should remain visible');
 elements.get('quality').value = 'high';
 events.get('quality:change')();
@@ -303,7 +316,7 @@ sandbox.document.hidden = false;
 sandboxMath.random = () => 0.2;
 const source = fs.readFileSync('app/src/main/assets/game.js', 'utf8');
 const inspectedSource = source.replace('  requestAnimationFrame(frame);\n})();',
-  '  window.__inspectObstacles = () => obstacles;\n  window.__inspectGame = () => ({ lives, shieldTimer, stageIndex, runDistance });\n  window.__setLivesForTest = value => { lives = value; updateHud(); };\n  window.__setBoatCenterForTest = () => { boat.x = width / 2; boat.vx = 0; };\n  window.__addCoinAtBoatForTest = () => { collectibles.push({ x: boat.x, y: boat.y, phase: 0 }); };\n  window.__setStatsForTest = (distance, dodged) => { stats.distance = distance; stats.dodged = dodged; };\n  window.__finishForTest = finish;\n  requestAnimationFrame(frame);\n})();');
+  '  window.__inspectObstacles = () => obstacles;\n  window.__inspectGame = () => ({ lives, shieldTimer, stageIndex, runDistance });\n  window.__setLivesForTest = value => { lives = value; updateHud(); };\n  window.__setBoatCenterForTest = () => { boat.x = width / 2; boat.vx = 0; };\n  window.__addCoinAtBoatForTest = () => { collectibles.push({ x: boat.x, y: boat.y, phase: 0 }); };\n  window.__setStatsForTest = (distance, dodged, runs) => { stats.distance = distance; stats.dodged = dodged; if (runs !== undefined) stats.runs = runs; };\n  window.__setRunForTest = (distance, dodged, pickups) => { runDistance = distance; score = dodged; collectedCoins = pickups; updateHud(); };\n  window.__finishForTest = finish;\n  requestAnimationFrame(frame);\n})();');
 assert.notEqual(inspectedSource, source, 'the smoke test should inspect the active obstacle list');
 vm.runInNewContext(inspectedSource, sandbox);
 events.get('play:click')();
@@ -382,17 +395,24 @@ nextFrame(146050);
 assert(elements.get('coinHud').textContent.includes('viaje +3'), 'the same coin must not be collected twice');
 sandbox.window.__finishForTest();
 const pickupEconomy = JSON.parse(storage.get('rio-aventura-economy-v1'));
-assert.equal(pickupEconomy.events.length, eventsBeforePickupRun + 1, 'pickup run should create one wallet event');
-assert.equal(pickupEconomy.events.at(-1).amount, 3, 'a collected coin should add three coins to the completed run');
+const pickupRunEvents = pickupEconomy.events.slice(eventsBeforePickupRun).filter(event => event.run);
+assert.equal(pickupRunEvents.length, 1, 'pickup run should create one wallet run event');
+assert.equal(pickupRunEvents[0].amount, 3, 'a collected coin should add three coins to the completed run');
 nextFrame(146050);
-assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, eventsBeforePickupRun + 1,
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, pickupEconomy.events.length,
   'a finished pickup run must not grant the reward twice');
 
 // All completed rank goals should award once, in the same wallet write as the trip.
 vm.runInNewContext(inspectedSource, sandbox);
 events.get('play:click')();
 const eventsBeforeRanks = JSON.parse(storage.get('rio-aventura-economy-v1')).events.length;
-sandbox.window.__setStatsForTest(2100, 45);
+sandbox.window.__setStatsForTest(125, 1);
+events.get('openingSettings:click')();
+assert.equal(elements.get('rankProgressFill').style.width, '33%', 'rank progress should require both distance and dodges');
+assert(elements.get('rankProgressText').textContent.includes('125/250 m'), 'rank progress should explain distance');
+assert.equal(elements.get('rankProgressTrack').attributes['aria-valuenow'], '33', 'progressbar should expose the measured value');
+events.get('closeSettings:click')();
+sandbox.window.__setStatsForTest(2100, 45, 8);
 blockEconomyWrites = true;
 sandbox.window.__finishForTest();
 assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, eventsBeforeRanks,
@@ -413,15 +433,39 @@ assert(rankedEconomy.events.slice(-3).every(event => event.type === 'earn' && ev
 assert.equal(rankedEconomy.events.slice(-3).reduce((sum, event) => sum + event.amount, 0), 70,
   'rank prizes should be credited once in the wallet');
 assert(elements.get('playerTag').textContent.includes('Capitán del río'), 'the highest rank should appear beside the player');
+assert(elements.get('playerTag').textContent.includes('🥇'), 'the highest rank should have its own badge');
+assert(!elements.get('rankToast').classList.contains('hidden'), 'a rank-up should show a brief celebration');
+assert(elements.get('rankToast').textContent.includes('Capitán del río'), 'celebration should name the new rank');
+for (let time = 150000; time <= 153500; time += 50) nextFrame(time);
+assert(elements.get('rankToast').classList.contains('hidden'), 'rank celebration should dismiss automatically');
 events.get('openingSettings:click')();
 for (const id of ['rank-explorer', 'rank-navigator', 'rank-captain']) {
   assert(elements.get(id).textContent.includes('Desbloqueado'), `${id} should show its permanent state`);
 }
+assert.equal(elements.get('rankProgressFill').style.width, '100%', 'all ranks should fill the progress bar');
+assert.equal(elements.get('achievement-dodger').textContent, 'Desbloqueado', 'verified dodges should unlock achievements');
+assert.equal(elements.get('achievement-traveler').textContent, 'Desbloqueado', 'saved distance should unlock achievements');
+assert.equal(elements.get('achievement-regular').textContent, 'Desbloqueado', 'ten saved trips should unlock the regular achievement');
+assert.equal(elements.get('boat-breeze').disabled, false, 'Explorer should unlock Brisa');
+assert.equal(elements.get('boat-aurora').disabled, false, 'Captain should unlock Aurora');
+events.get('boat-breeze:click')();
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'breeze', 'the first rank boat should be equipable for free');
+boatColors.length = 0;
+nextFrame(153550);
+assert(boatColors.includes('#53aa80'), 'Brisa should have its own visible hull color');
+events.get('boat-aurora:click')();
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'aurora', 'the final rank boat should be equipable for free');
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, rankedEconomy.events.length,
+  'equipping rank boats should not spend coins or add purchases');
 events.get('exportProgress:click')();
 assert.equal(JSON.parse(elements.get('backupText').value).economy.events.length, rankedEconomy.events.length,
   'the manual backup should include earned ranks');
 vm.runInNewContext(inspectedSource, sandbox);
 assert(elements.get('playerTag').textContent.includes('Capitán del río'), 'the rank should survive a fresh game launch');
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'aurora', 'the chosen rank boat should survive a relaunch');
+boatColors.length = 0;
+nextFrame(154000);
+assert(boatColors.includes('#9163c9'), 'Aurora should have its own visible hull color');
 events.get('play:click')();
 sandbox.window.__finishForTest();
 assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, rankedEconomy.events.length + 1,
@@ -442,4 +486,84 @@ const recovery = { ...decodedBackup, economy: JSON.parse(savedEconomy) };
 elements.get('backupText').value = JSON.stringify(recovery);
 events.get('importProgress:click')();
 assert.equal(storage.get('rio-aventura-economy-v1'), savedEconomy, 'a valid backup should recover the wallet');
+events.get('closeSettings:click')();
+
+// Daily missions use completed-run ledger entries and can pay once per phone day.
+const NativeDate = Date;
+let simulatedNow = NativeDate.parse('2030-01-15T12:00:00Z');
+sandbox.Date = class extends NativeDate {
+  constructor(...args) { if (args.length) super(...args); else super(simulatedNow); }
+  static now() { return simulatedNow; }
+};
+vm.runInNewContext(inspectedSource, sandbox);
+events.get('play:click')();
+let dailyStart = JSON.parse(storage.get('rio-aventura-economy-v1')).events.length;
+sandbox.window.__setRunForTest(150, 4, 2);
+blockEconomyWrites = true;
+sandbox.window.__finishForTest();
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, dailyStart,
+  'a failed wallet write must not claim daily missions or store a partial trip');
+blockEconomyWrites = false;
+vm.runInNewContext(inspectedSource, sandbox);
+events.get('play:click')();
+sandbox.window.__setRunForTest(150, 4, 2);
+sandbox.window.__finishForTest();
+let dailyEvents = JSON.parse(storage.get('rio-aventura-economy-v1')).events.slice(dailyStart);
+assert.equal(dailyEvents.filter(event => event.run).length, 1, 'the daily test trip should be recorded once');
+assert.deepEqual(Array.from(dailyEvents.filter(event => event.dailyMission), event => event.dailyMission),
+  ['distance', 'dodged', 'pickups'], 'all three completed daily missions should pay automatically');
+assert.equal(dailyEvents.filter(event => event.dailyMission).reduce((sum, event) => sum + event.amount, 0), 15,
+  'daily rewards should be balanced and credited once');
+events.get('openingSettings:click')();
+for (const id of ['daily-distance', 'daily-dodged', 'daily-pickups']) {
+  assert(elements.get(id).textContent.includes('Completada'), `${id} should show a claimed mission`);
+}
+events.get('exportProgress:click')();
+assert.equal(JSON.parse(elements.get('backupText').value).economy.events.length,
+  JSON.parse(storage.get('rio-aventura-economy-v1')).events.length,
+  'the backup should include daily mission progress and rewards');
+vm.runInNewContext(inspectedSource, sandbox);
+events.get('openingSettings:click')();
+assert(elements.get('daily-distance').textContent.includes('Completada'), 'daily claims should survive a relaunch');
+events.get('closeSettings:click')();
+events.get('play:click')();
+dailyStart = JSON.parse(storage.get('rio-aventura-economy-v1')).events.length;
+sandbox.window.__setRunForTest(150, 4, 2);
+sandbox.window.__finishForTest();
+dailyEvents = JSON.parse(storage.get('rio-aventura-economy-v1')).events.slice(dailyStart);
+assert.equal(dailyEvents.filter(event => event.dailyMission).length, 0,
+  'repeating the mission on the same day must not pay again');
+simulatedNow = NativeDate.parse('2030-01-16T12:00:00Z');
+vm.runInNewContext(inspectedSource, sandbox);
+events.get('play:click')();
+dailyStart = JSON.parse(storage.get('rio-aventura-economy-v1')).events.length;
+sandbox.window.__setRunForTest(150, 4, 2);
+sandbox.window.__finishForTest();
+dailyEvents = JSON.parse(storage.get('rio-aventura-economy-v1')).events.slice(dailyStart);
+assert.equal(dailyEvents.filter(event => event.dailyMission).length, 3,
+  'a new phone day should make daily missions available again');
+simulatedNow = NativeDate.parse('2030-01-15T12:00:00Z');
+vm.runInNewContext(inspectedSource, sandbox);
+events.get('play:click')();
+dailyStart = JSON.parse(storage.get('rio-aventura-economy-v1')).events.length;
+sandbox.window.__setRunForTest(150, 4, 2);
+sandbox.window.__finishForTest();
+dailyEvents = JSON.parse(storage.get('rio-aventura-economy-v1')).events.slice(dailyStart);
+assert.equal(dailyEvents.filter(event => event.dailyMission).length, 0,
+  'moving the phone clock backwards must not reopen claimed missions');
+assert.equal(dailyEvents.find(event => event.run).run.day, '2030-01-16',
+  'clock rollback should preserve the latest recorded mission day');
+events.get('openingSettings:click')();
+assert(elements.get('dailyDate').textContent.includes('atrasado'), 'a rolled-back clock should be explained in settings');
+events.get('exportProgress:click')();
+const duplicateClaimBackup = JSON.parse(elements.get('backupText').value);
+const earlierClaim = duplicateClaimBackup.economy.events.find(event => event.dailyDay === '2030-01-16');
+duplicateClaimBackup.economy.events.push({ ...earlierClaim, id: 'duplicate-daily-claim' });
+const walletBeforeBadImport = storage.get('rio-aventura-economy-v1');
+elements.get('backupText').value = JSON.stringify(duplicateClaimBackup);
+events.get('importProgress:click')();
+assert(elements.get('backupNotice').textContent.includes('no es válida'), 'duplicated daily claims should fail backup validation');
+assert.equal(storage.get('rio-aventura-economy-v1'), walletBeforeBadImport,
+  'a duplicate-claim backup must not modify the wallet');
+delete sandbox.Date;
 console.log('Visual smoke test passed');
