@@ -129,7 +129,7 @@ assert(operations.filter(name => name === 'bezierCurveTo').length > 5, 'moving w
 assert(operations.filter(name => name === 'arc').length > 20, 'layered riverside trees should be drawn');
 assert.equal(waterGradientCreates, 1, 'the water gradient should be reused between frames');
 const html = fs.readFileSync('app/src/main/assets/index.html', 'utf8');
-for (const id of ['settings', 'openingSettings', 'settingsPanel', 'profileName', 'avatar', 'quality', 'performanceInfo', 'bestScore', 'totalRuns', 'totalDodged', 'legacyDodged', 'playerTag', 'backupText', 'exportProgress', 'importProgress', 'stageLabel', 'stageDistance', 'stageProgress', 'stageToast', 'coinHud', 'garageCoins', 'boat-classic', 'boat-coral', 'boat-storm']) {
+for (const id of ['settings', 'openingSettings', 'settingsPanel', 'profileName', 'avatar', 'quality', 'performanceInfo', 'bestScore', 'totalRuns', 'totalDodged', 'legacyDodged', 'playerTag', 'backupText', 'exportProgress', 'importProgress', 'stageLabel', 'stageDistance', 'stageProgress', 'stageToast', 'coinHud', 'garageCoins', 'boat-classic', 'boat-coral', 'boat-storm', 'rank-explorer', 'rank-navigator', 'rank-captain']) {
   assert(html.includes(`id="${id}"`), `the settings screen needs ${id}`);
 }
 events.get('settings:click')();
@@ -303,7 +303,7 @@ sandbox.document.hidden = false;
 sandboxMath.random = () => 0.2;
 const source = fs.readFileSync('app/src/main/assets/game.js', 'utf8');
 const inspectedSource = source.replace('  requestAnimationFrame(frame);\n})();',
-  '  window.__inspectObstacles = () => obstacles;\n  window.__inspectGame = () => ({ lives, shieldTimer, stageIndex, runDistance });\n  window.__setLivesForTest = value => { lives = value; updateHud(); };\n  window.__setBoatCenterForTest = () => { boat.x = width / 2; boat.vx = 0; };\n  window.__addCoinAtBoatForTest = () => { collectibles.push({ x: boat.x, y: boat.y, phase: 0 }); };\n  window.__finishForTest = finish;\n  requestAnimationFrame(frame);\n})();');
+  '  window.__inspectObstacles = () => obstacles;\n  window.__inspectGame = () => ({ lives, shieldTimer, stageIndex, runDistance });\n  window.__setLivesForTest = value => { lives = value; updateHud(); };\n  window.__setBoatCenterForTest = () => { boat.x = width / 2; boat.vx = 0; };\n  window.__addCoinAtBoatForTest = () => { collectibles.push({ x: boat.x, y: boat.y, phase: 0 }); };\n  window.__setStatsForTest = (distance, dodged) => { stats.distance = distance; stats.dodged = dodged; };\n  window.__finishForTest = finish;\n  requestAnimationFrame(frame);\n})();');
 assert.notEqual(inspectedSource, source, 'the smoke test should inspect the active obstacle list');
 vm.runInNewContext(inspectedSource, sandbox);
 events.get('play:click')();
@@ -387,6 +387,45 @@ assert.equal(pickupEconomy.events.at(-1).amount, 3, 'a collected coin should add
 nextFrame(146050);
 assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, eventsBeforePickupRun + 1,
   'a finished pickup run must not grant the reward twice');
+
+// All completed rank goals should award once, in the same wallet write as the trip.
+vm.runInNewContext(inspectedSource, sandbox);
+events.get('play:click')();
+const eventsBeforeRanks = JSON.parse(storage.get('rio-aventura-economy-v1')).events.length;
+sandbox.window.__setStatsForTest(2100, 45);
+blockEconomyWrites = true;
+sandbox.window.__finishForTest();
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, eventsBeforeRanks,
+  'failed wallet storage must not claim rank prizes');
+events.get('openingSettings:click')();
+assert(elements.get('rank-explorer').textContent.includes('Objetivo listo'),
+  'an unpaid rank should remain ready to claim after a failed save');
+blockEconomyWrites = false;
+vm.runInNewContext(inspectedSource, sandbox);
+events.get('play:click')();
+sandbox.window.__finishForTest();
+const rankedEconomy = JSON.parse(storage.get('rio-aventura-economy-v1'));
+assert.equal(rankedEconomy.events.length, eventsBeforeRanks + 4, 'three ranks and one trip should form four events');
+assert.deepEqual(Array.from(rankedEconomy.events.slice(-3), event => event.rank),
+  ['explorer', 'navigator', 'captain'], 'all ranks should be unlocked in order');
+assert(rankedEconomy.events.slice(-3).every(event => event.type === 'earn' && event.amount <= 80),
+  'rank prizes should remain readable as ordinary earnings by the previous version');
+assert.equal(rankedEconomy.events.slice(-3).reduce((sum, event) => sum + event.amount, 0), 70,
+  'rank prizes should be credited once in the wallet');
+assert(elements.get('playerTag').textContent.includes('Capitán del río'), 'the highest rank should appear beside the player');
+events.get('openingSettings:click')();
+for (const id of ['rank-explorer', 'rank-navigator', 'rank-captain']) {
+  assert(elements.get(id).textContent.includes('Desbloqueado'), `${id} should show its permanent state`);
+}
+events.get('exportProgress:click')();
+assert.equal(JSON.parse(elements.get('backupText').value).economy.events.length, rankedEconomy.events.length,
+  'the manual backup should include earned ranks');
+vm.runInNewContext(inspectedSource, sandbox);
+assert(elements.get('playerTag').textContent.includes('Capitán del río'), 'the rank should survive a fresh game launch');
+events.get('play:click')();
+sandbox.window.__finishForTest();
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, rankedEconomy.events.length + 1,
+  'a second trip must not award unlocked ranks again');
 
 // Damaged stored economy is never silently replaced by an empty wallet.
 const savedEconomy = storage.get('rio-aventura-economy-v1');
