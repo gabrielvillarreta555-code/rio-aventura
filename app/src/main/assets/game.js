@@ -46,6 +46,11 @@
     { id: 'coral', name: 'Coral', price: 15, hull: ['#ffad78', '#df675d', '#8b3b50'], trim: '#ffd8a0' },
     { id: 'storm', name: 'Tormenta', price: 45, hull: ['#9fd8e9', '#447aab', '#263c70'], trim: '#c8f4f4' }
   ];
+  const ranks = [
+    { id: 'explorer', name: 'Explorador', distance: 250, dodged: 3, reward: 10 },
+    { id: 'navigator', name: 'Navegante', distance: 800, dodged: 15, reward: 20 },
+    { id: 'captain', name: 'Capitán del río', distance: 2000, dodged: 40, reward: 40 }
+  ];
   const stages = [
     { start: 0, name: 'Orillas tranquilas', water: ['#18566c', '#2a9caa', '#64c8c2'], driftChance: 0 },
     { start: 100, name: 'Troncos a la deriva', water: ['#145466', '#238c9d', '#4db6ae'], driftChance: 0.32 },
@@ -105,12 +110,18 @@
 
   function replayEconomy(events) {
     const owned = new Set(['classic']);
+    const earnedRanks = new Set();
     const seen = new Set();
     let coins = 0;
     for (const event of events) {
       if (!event || typeof event.id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(event.id) || seen.has(event.id)) return null;
       seen.add(event.id);
       if (event.type === 'earn' && Number.isInteger(event.amount) && event.amount >= 1 && event.amount <= 80) {
+        if (Object.prototype.hasOwnProperty.call(event, 'rank')) {
+          const rank = ranks.find(item => item.id === event.rank);
+          if (!rank || event.amount !== rank.reward || earnedRanks.has(rank.id)) return null;
+          earnedRanks.add(rank.id);
+        }
         coins += event.amount;
         if (coins > 100000000) return null;
       } else if (event.type === 'buy') {
@@ -121,7 +132,7 @@
         owned.add(event.boat);
       } else return null;
     }
-    return { coins, owned };
+    return { coins, owned, earnedRanks };
   }
 
   function validateEconomy(value) {
@@ -155,12 +166,12 @@
     return true;
   }
 
-  function economyWithEvent(event) {
-    let sequence = economy.nextEvent;
-    let id = `${economy.deviceId}-${sequence}`;
-    while (economy.events.some(item => item.id === id)) id = `${economy.deviceId}-${++sequence}`;
-    return { ...economy, nextEvent: sequence + 1,
-      events: [...economy.events, { id, ...event }] };
+  function economyWithEvent(event, current = economy) {
+    let sequence = current.nextEvent;
+    let id = `${current.deviceId}-${sequence}`;
+    while (current.events.some(item => item.id === id)) id = `${current.deviceId}-${++sequence}`;
+    return { ...current, nextEvent: sequence + 1,
+      events: [...current.events, { id, ...event }] };
   }
 
   function updateCoinHud() {
@@ -178,6 +189,18 @@
       button.disabled = economy.selected === boatOption.id || economyError;
     }
     if (economyError) garageNotice.textContent = 'No se pudo leer el progreso de monedas. Restaura una copia antes de comprar.';
+  }
+
+  function updateRankView() {
+    const earnedRanks = economyError ? new Set() : replayEconomy(economy.events).earnedRanks;
+    for (const rank of ranks) {
+      const label = document.getElementById(`rank-${rank.id}`);
+      label.textContent = economyError ? 'Recupera tu progreso de monedas para ver los rangos.'
+        : earnedRanks.has(rank.id) ? `Desbloqueado · +${rank.reward} 🪙 recibidas`
+          : stats.distance >= rank.distance && stats.dodged >= rank.dodged
+            ? `¡Objetivo listo! Termina un viaje para cobrar +${rank.reward} 🪙`
+          : `${Math.min(stats.distance, rank.distance)}/${rank.distance} m · ${Math.min(stats.dodged, rank.dodged)}/${rank.dodged} esquivas · premio +${rank.reward} 🪙`;
+    }
   }
 
   function readProfile() {
@@ -250,10 +273,14 @@
       ? 'FPS: juega unos segundos para medirlos.'
       : `Última medición: ${measuredFps} FPS dibujados.`;
     updateGarageView();
+    updateRankView();
   }
 
   function updateProfileBadge() {
-    playerTag.textContent = `${avatars[profile.avatar]} ${profile.name}`;
+    const earnedRanks = economyError ? new Set() : replayEconomy(economy.events).earnedRanks;
+    let highest = null;
+    for (const rank of ranks) if (earnedRanks.has(rank.id)) highest = rank;
+    playerTag.textContent = `${avatars[profile.avatar]} ${profile.name}${highest ? ` · ${highest.name}` : ''}`;
   }
 
   // Keep the original 450-unit playfield while filling taller phone screens.
@@ -268,6 +295,7 @@
     waterGradient = null;
     if (boat) boat.y += difference;
     if (obstacles) obstacles.forEach(item => { item.y += difference; });
+    if (collectibles) collectibles.forEach(coin => { coin.y += difference; });
   }
 
   function updateStageHud() {
@@ -359,10 +387,18 @@
     stats.distance = Math.min(100000000, stats.distance + Math.round(runDistance));
     const savedStats = saveStats();
     const earned = Math.max(1, Math.min(80, Math.floor(runDistance / 35) + score * 2 + collectedCoins * 3));
-    const savedCoins = saveEconomy(economyWithEvent({ type: 'earn', amount: earned }));
+    let nextEconomy = economyWithEvent({ type: 'earn', amount: earned });
+    const earnedRanks = replayEconomy(economy.events).earnedRanks;
+    const newRanks = savedStats && !economyError
+      ? ranks.filter(rank => stats.distance >= rank.distance && stats.dodged >= rank.dodged && !earnedRanks.has(rank.id))
+      : [];
+    for (const rank of newRanks) nextEconomy = economyWithEvent({ type: 'earn', rank: rank.id, amount: rank.reward }, nextEconomy);
+    const savedCoins = saveEconomy(nextEconomy);
     updateCoinHud();
+    updateProfileBadge();
+    const rankMessage = savedCoins && newRanks.length ? ` ¡Nuevo rango: ${newRanks[newRanks.length - 1].name}! Premio extra: ${newRanks.reduce((sum, rank) => sum + rank.reward, 0)} monedas.` : '';
     showOverlay('¡Fin del<br>viaje!',
-      `Lograste ${score} puntos, recogiste ${collectedCoins} monedas flotantes y ganaste ${savedCoins ? earned : 0} monedas en total. Tu récord es ${best}.${savedBest && savedStats && savedCoins ? '' : ' No se pudo guardar todo el progreso.'}`,
+      `Lograste ${score} puntos, recogiste ${collectedCoins} monedas flotantes y ganaste ${savedCoins ? earned : 0} monedas de viaje. Tu récord es ${best}.${rankMessage}${savedBest && savedStats && savedCoins ? '' : ' No se pudo guardar todo el progreso.'}`,
       'Jugar otra vez');
   }
 
