@@ -86,7 +86,7 @@ test('recoger a tiempo pone el pez en la hielera y lo muestra en el marcador', (
   game.click('fishButton');
   assert.equal(game.api().bag().caballa, 1, 'con el generador fijo sale una caballa');
   assert.match(game.text('stageToast'), /Caballa/);
-  assert.match(game.text('lives'), /🐟 1\/10/);
+  assert.match(game.text('lives'), /🐟1/);
   assert.equal(game.api().fishingState().phase, 'result');
   game.tick(70, 16);
   assert.equal(game.api().fishingState(), null);
@@ -211,7 +211,7 @@ test('la captura se guarda: al cerrar y reabrir la hielera sigue igual', () => {
   again.click('exploreSea');
   assert.equal(again.api().bag().caballa, 1);
   assert.equal(again.api().sellId(), game.api().sellId());
-  assert.match(again.text('lives'), /🐟 1\/10/);
+  assert.match(again.text('lives'), /🐟1/);
 });
 
 test('un guardado antiguo con una bolsa ya vendida no resucita los peces', () => {

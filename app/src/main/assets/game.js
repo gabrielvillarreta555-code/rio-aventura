@@ -1938,7 +1938,7 @@
     seaHudAt = 0.25;
     const found = economyError ? 0 : currentView().discovered.size;
     scoreEl.textContent = `🪙 ${seaTrip.pickups} · ${Math.floor(seaTrip.dist)} m`;
-    livesEl.textContent = `🧭 ${found}/${world.destinations.length} · 🐟 ${fishing.count(seaBag)}/${fishing.capacity}`;
+    livesEl.textContent = `🧭${found}/${world.destinations.length} 🐟${fishing.count(seaBag)}`;
     let target = null;
     const deliver = seaQuests.map(q => ({ q, dock: seaWorld.docks.find(d => d.id === quests.template(q.tpl).to) }));
     for (const item of deliver) {

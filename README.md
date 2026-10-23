@@ -343,6 +343,48 @@ hablar, aceptar, cerrar y reabrir la app, conducir hasta la aldea, atracar, cobr
 la libreta, además de medir que los botones táctiles miden al menos 44 px. Capturas y vídeo en
 `docs/world-2.7/`.
 
+## Río Aventura 2.7.1: salir sin morir, personajes visibles y pesca
+
+Corrige tres problemas encontrados jugando en Android (issue #25). No añade misiones nuevas.
+
+- **Pausa con salida (río clásico y mundo libre).** El botón de pausa (⏸, ahora de 46 px) abre un menú con
+  **Reanudar**, **💾 Guardar y salir al menú** y, en el río clásico, **🏁 Terminar viaje y cobrar**. Las salidas
+  piden confirmación. *Guardar y salir* en el río deja el viaje guardado (sin morir ni cobrar todavía) y
+  el menú ofrece «Continuar viaje» o «Cobrar y empezar de nuevo»; cobrar sigue siendo único por viaje.
+  En el mundo libre guarda la posición, los encargos y la pesca y vuelve al menú. **Botón Atrás** de Android: jugando
+  pausa; en la pausa o en un muelle pregunta si guardar y salir; en la pregunta cancela; tras terminar un viaje
+  del río vuelve al menú; en el menú principal deja salir de la app. La tecla Esc hace lo mismo. Todos los
+  botones de las pantallas miden al menos 48 px.
+- **Personajes visibles.** Cada personaje es ahora un sprite de 96 × 110 (≈ 80 unidades de alto, más que la
+  lancha), **con contorno blanco** para destacar sobre agua, madera y hierba, y un objeto propio que lo
+  hace reconocible (carpeta de la capitana, caña del pescador, hierbas de la abuela, llave de la ingeniera,
+  lupa del profesor, farol de la farera). Está **de pie sobre el embarcadero**, con una etiqueta de nombre,
+  rol y lugar, y la marca «!»/«✓» encima. Se despejó de árboles todo el embarcadero y se comprueba por
+  prueba que nada los tapa. Al acercarse (≈ 340 unidades) un aviso dice quién espera y cómo hablar. El
+  botón «💬 Hablar» sigue siendo la interacción al atracar.
+- **Pesca jugable.** Dos **caladeros** visibles (anillo azul con peces nadando y cartel): la bahía de
+  Puerto Palmar (peces comunes) y el lago del norte (mejores peces). Se entra con la lancha, **se frena** y aparece
+  el botón **🎣 Pescar aquí**. Al lanzar, la lancha se queda quieta (freno automático) y aparece una boya;
+  cuando pica salta la alerta (**¡RECOGER!**, botón rojo, boya que salpica) y hay **1,1 s** para tocar. Pronto = se
+  asusta; tarde = se escapa; mover la lancha o salir del círculo cancela. Si recoges en menos de 0,5 s tienes
+  mejor pez. Cinco especies (sardina 2, caballa 3, pargo 6, dorada 9, pez luna 20 monedas) en una
+  **hielera de 10**. Se **vende al pescador Tomás** (Aldea Coral): «Vender todo» paga exactamente el
+  valor. El marcador muestra 🐟 y la libreta de Ajustes los peces vendidos.
+- **Guardado y exactitud.** La hielera y su identificador de venta se guardan con la lancha. Cada venta es
+  un evento único del historial (`sale`, formato 4 como los encargos; tope 200 por venta = 10 peces × 20) y la
+  bolsa vendida no resucita desde un guardado antiguo. Datos de 2.3.1–2.7 intactos; pescar no toca el
+  historial, solo vender.
+
+Rendimiento: las novedades son sprites en caché (personajes, peces, boya), un anillo y ≤ 4 sombras por
+caladero visible; el aviso y el marcador se actualizan a 4 Hz. Medido en Chromium sin GPU (CPU 1× / 4× más lenta):
+p99 16,8 / 50 ms y 0 / 7 fotogramas > 50 ms en 20–25 s, igual que 2.7. No se ha medido en un teléfono físico.
+
+Pruebas: `node tests/visual-smoke.cjs` incluye `pause.cjs` (12), `npc-visible.cjs` (4), `fishing.cjs` (5) y
+`fishing-game.cjs` (17). `node tests/e2e-fixes.cjs [carpeta]` (opcional, Playwright; `RECORD_DIR` graba vídeo)
+recorre en Chromium real: pausa → guardar y salir → reabrir → continuar, atrás, terminar y cobrar, salir del
+mundo libre, personajes dibujados, ir al caladero con el joystick, parar, pescar 3 peces, llevarlos a la aldea y
+venderlos una vez, comprobando que los botones táctiles miden ≥ 44 px. Capturas y vídeo en `docs/world-2.7.1/`.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
