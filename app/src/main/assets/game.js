@@ -45,7 +45,7 @@
   const profile = readProfile();
   const stats = readStats();
   let state = 'ready';
-  let boat, obstacles, particles, score, lives, elapsed, spawnIn, immunity, direction, riverSpeed;
+  let boat, obstacles, particles, score, lives, elapsed, spawnIn, immunity, shieldTimer, direction, riverSpeed;
   let runDistance = 0;
   let stageIndex = 0;
   let stageHudTimer = 0;
@@ -207,6 +207,7 @@
     elapsed = 0;
     spawnIn = 0.6;
     immunity = 0;
+    shieldTimer = 0;
     direction = 0;
     riverSpeed = 140;
     activePointerId = null;
@@ -224,7 +225,7 @@
 
   function updateHud() {
     scoreEl.textContent = `${score} puntos`;
-    livesEl.textContent = '♥ '.repeat(lives).trim() || '—';
+    livesEl.textContent = `${'♥ '.repeat(lives).trim() || '—'}${shieldTimer > 0 ? ' 🛡' : ''}`;
   }
 
   function showOverlay(heading, body, button) {
@@ -282,6 +283,10 @@
     if (state !== 'playing') return;
     elapsed += dt;
     immunity = Math.max(0, immunity - dt);
+    if (shieldTimer > 0) {
+      shieldTimer = Math.max(0, shieldTimer - dt);
+      if (shieldTimer === 0) updateHud();
+    }
     impact = Math.max(0, impact - dt * 2.6);
     const targetVx = direction * 285;
     const velocityChange = targetVx - boat.vx;
@@ -303,7 +308,11 @@
     if (stageIndex < stages.length - 1 && runDistance >= stages[stageIndex + 1].start) {
       stageIndex++;
       waterGradient = null;
-      stageToast.textContent = `¡Tramo ${stageIndex + 1}: ${stages[stageIndex].name}!`;
+      const healed = lives < 3;
+      if (healed) lives++;
+      shieldTimer = 3;
+      updateHud();
+      stageToast.textContent = `¡Tramo ${stageIndex + 1}: ${stages[stageIndex].name}! ${healed ? 'Vida recuperada + ' : ''}Escudo 3 s`;
       stageToast.classList.remove('hidden');
       stageToastTimer = 2.4;
       updateStageHud();
@@ -346,7 +355,10 @@
       const separation = Math.hypot(projectedX(item.x, item.y) - projectedX(boat.x, boat.y), item.y - boat.y);
       if (!item.hit && separation < contactRadius) {
         item.hit = true;
-        if (immunity !== 0) continue;
+        if (immunity !== 0 || shieldTimer > 0) {
+          if (shieldTimer > 0) splash(item.x, item.y, 7, '#ffdf85');
+          continue;
+        }
         lives--;
         immunity = 1.4;
         impact = 1;
@@ -574,6 +586,13 @@
     ctx.save();
     ctx.translate(projectedX(boat.x, boat.y), boat.y + Math.sin(elapsed * 7) * 3);
     ctx.scale(depthAt(boat.y), depthAt(boat.y));
+    if (shieldTimer > 0) {
+      ctx.strokeStyle = '#ffdf85';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, 4, 59 + Math.sin(elapsed * 8) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.rotate(boat.tilt + Math.sin(elapsed * 3) * 0.025);
     ctx.fillStyle = '#0b34468c';
     ctx.beginPath();
