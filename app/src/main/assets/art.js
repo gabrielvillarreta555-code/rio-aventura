@@ -919,7 +919,9 @@
 
     // Sprites propios del tema actual: una variante teñida de uno existente o una pintura nueva.
     function themed(name) {
-      const spec = themeSpecs && themeSpecs[name];
+      let spec = themeSpecs && themeSpecs[name];
+      // El mundo libre mezcla zonas de varios temas: sus sprites se buscan en todos.
+      if (!spec) for (const id in themes) if (themes[id].sprites && themes[id].sprites[name]) { spec = themes[id].sprites[name]; break; }
       if (!spec) throw new Error(`Sprite desconocido: ${name}`);
       if (spec.base) {
         const base = S(spec.base);

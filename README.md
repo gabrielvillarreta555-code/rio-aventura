@@ -222,6 +222,67 @@ recorre el flujo completo en Chromium (necesita Playwright; opcional) y guarda
 capturas. Capturas de esta versión en `docs/world-2.5/`. Las pruebas de rendimiento
 se hicieron en un navegador sin GPU; no se ha probado en un teléfono físico.
 
+## Río Aventura 2.6: mundo libre (prototipo)
+
+La versión 2.5 seguía siendo «subir por un río». La 2.6 añade un **modo separado, «⛵ Explorar el
+mundo»** (botón principal del título), donde **tú eliges la dirección**: no hay corriente
+que empuje la lancha ni scroll automático.
+
+- **Controles táctiles:** joystick virtual flotante (apoya el dedo en cualquier punto y arrastra:
+  la dirección es la del arrastre y la fuerza, la distancia) y botón rojo **FRENO** (se puede usar
+  con el otro dedo). En teclado: flechas o WASD y espacio para frenar. La lancha gira, acelera en la
+  dirección del casco, tiene inercia y poca deriva lateral; da media vuelta en menos de un segundo.
+- **Cámara y mundo:** mapa de 100 × 100 mosaicos (4000 × 4000 unidades, unas 9 pantallas de ancho)
+  con una cámara suave que sigue a la lancha y se adelanta un poco hacia donde va. Las coordenadas
+  son persistentes: la posición se guarda y al reabrir la app sigues donde estabas. Minimapa en una
+  esquina y pista de «rumbo y distancia al próximo muelle» en la barra superior.
+- **Geografía real:** puerto con bahía, un río que sube hasta una **bifurcación**; dos canales
+  navegables distintos rodean una **isla central** y se vuelven a unir en un lago norte; ramales
+  hacia cada muelle; islotes; rocas; monedas flotantes. Zonas con aspecto propio (aldea, manglar,
+  tierras altas con cascada, ruinas, valle de cristales).
+- **Colisiones:** costa, embarcaderos y rocas son sólidos (rebote y deslizamiento, sin atravesar
+  ni a máxima velocidad ni con fotogramas largos). El mapa está rodeado de costa.
+- **Muelles:** hay seis (Puerto Palmar y los cinco destinos). **Se llega físicamente**: entra en la
+  zona de atraque (círculo punteado) y **frena** (menos de ~115 unidades/s); tras medio segundo se
+  atraca. En un destino se descubre (premio de primera visita una sola vez, rutas nuevas, logros) y
+  se cobra el viaje; en el puerto se cobra el viaje. Un muelle cerrado explica qué falta (por
+  ejemplo, «Descubre Aldea Coral» o el rango Navegante para la laguna).
+- **Economía y progreso intactos:** el viaje del mundo libre se cobra al atracar con la misma
+  fórmula (distancia, esquivas y monedas flotantes, tope de 80) y el mismo diario de cobros
+  pendientes, así que es idempotente. Rozar una roca sin chocar cuenta como esquiva (una vez por
+  roca y viaje), lo que da rango. Volver a atracar sin haber navegado no da monedas. Lo descubierto
+  en el mapa de rutas clásicas abre muelles y viceversa. La navegación clásica (río, rutas y mapa
+  de 2.5) sigue siendo un modo aparte, con «Salir al menú» para volver a ella.
+
+Limitaciones del prototipo: un solo mapa fijo (no procedural), sin vidas ni peligros más allá de los
+choques, sin sonido, y el botón «atrás» pausa pero no tiene confirmación para salir. No se ha probado
+en un teléfono físico.
+
+**Rendimiento.** Se investigó con Chromium sin GPU (CPU 1×/2×/4× más lenta): en la navegación clásica,
+la JS por fotograma es baja (≤ 6 ms), no hay recolecciones de memoria largas y los accesos a
+`localStorage` son de ~0,1 ms; los tirones medidos venían de la **calidad automática**: en una CPU
+lenta pasaban ~4 s a máxima calidad antes de reaccionar, y cada cambio de resolución reconstruye el
+lienzo y los sprites (50–120 ms de tirón), también al subir «a prueba» cada ~9 s. Cambios: la primera
+medición tarda 0,7 s en vez de 1,5 s, las subidas a prueba piden 18 s buenos y se limitan a 2 por
+sesión (menos cambios de resolución). El mundo libre se diseñó para no repetir esos costes: la
+tierra se dibuja **una vez por trozo de 8 × 8 mosaicos** (≈0,6 ms por trozo, ≈3 ms con CPU 4× más
+lenta) y se copia con `drawImage`; solo se mantienen unos 30 trozos en una caché de uso reciente
+(≈28 MB como máximo), el resto se construye bajo demanda con un anillo por delante de la cámara;
+árboles y objetos se recortan por pantalla y se ordenan sin crear objetos nuevos; no hay degradados
+ni sprites nuevos por fotograma (las pruebas lo vigilan); el minimapa se dibuja a 15 Hz desde una
+imagen en caché; la partida solo se escribe en `localStorage` si cambió algo y cada 3 s. En el
+navegador de pruebas, las rutas dibujan ≤ 150 `drawImage` por fotograma y 60 FPS estables; en un teléfono
+real puede variar, y Ajustes → Gráficos muestra el nivel automático elegido.
+
+Pruebas: `node tests/visual-smoke.cjs` incluye `sea.cjs` (16: mapa, bifurcación y isla comprobadas por
+búsqueda de caminos, movimiento en las 4 direcciones, inercia, freno, colisiones con 20 000 pasos
+aleatorios, rodeo de la isla navegando) y `sea-game.cjs` (25: controles de teclado, joystick con
+varios dedos y freno, cámara, atraque, muelles cerrados, descubrimiento único, guardado y reanudación,
+diario de pendientes, modos, presupuesto de dibujo y calidad automática). `node tests/e2e-sea.cjs
+[carpeta]` (opcional, necesita Playwright) hace en Chromium real todo el recorrido con teclado y
+joystick: cuatro direcciones, rodear la isla por los dos canales, atracar en la aldea y recargar;
+con `RECORD_DIR=<carpeta>` graba un vídeo. Capturas y vídeo en `docs/world-2.6/`.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta

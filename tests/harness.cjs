@@ -16,7 +16,11 @@ const hooks = `
     open: id => routeOpen(id), view: () => currentView(), economy: () => economy,
     coinAtBoat: () => { collectibles.push({ x: boat.x, y: boat.y, phase: 0 }); },
     scene: () => scene, tier: () => gfxTier, tripId: () => tripId, interrupted: () => interrupted,
-    clearObstacles: () => { obstacles = []; }
+    clearObstacles: () => { obstacles = []; },
+    mode: () => mode, seaBoat: () => seaBoat, seaCam: () => seaCam, seaTrip: () => seaTrip, seaTaken: () => seaTaken,
+    seaStatus: () => seaDockStatus, seaView: () => seaView, seaWorld: () => seaWorld, seaInput: () => seaInput,
+    seaPlace: (x, y, h = 0) => { seaBoat.x = x; seaBoat.y = y; seaBoat.vx = 0; seaBoat.vy = 0; seaBoat.heading = h; seaFollow(0, true); },
+    seaHintText: () => seaHintText
   };
 `;
 if (!gameSource.includes(anchor)) throw new Error('El arnés necesita el ancla de game.js');
@@ -63,7 +67,7 @@ function launch({ store = makeStore(), pixelRatio, sprites = true, random = () =
       set(target, key, value) { target[key] = value; return true; }
     });
   };
-  const initiallyHidden = new Set(['settingsPanel', 'finishTrip', 'mapPanel', 'arrivalCard', 'mapHint']);
+  const initiallyHidden = new Set(['settingsPanel', 'finishTrip', 'mapPanel', 'arrivalCard', 'mapHint', 'seaMap', 'seaBrake', 'joy', 'seaHint', 'exitSea']);
   const element = id => {
     const classes = new Set(initiallyHidden.has(id) ? ['hidden'] : []);
     const item = {
@@ -125,6 +129,7 @@ function launch({ store = makeStore(), pixelRatio, sprites = true, random = () =
     disabled: id => Boolean(elements.get(id).disabled),
     click: id => handlers.get(`${id}:click`)(),
     fire: name => handlers.get(name)(),
+    emit: (name, event) => handlers.get(name)(event),
     tick(frames = 1, step = 16) { for (let i = 0; i < frames; i++) { clock += step; nextFrame(clock); } },
     resize(height) { viewHeight = height; handlers.get('window:resize')(); },
     // Empieza un viaje por una ruta (o navegación libre) y lo mantiene con vida para las pruebas.
