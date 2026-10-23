@@ -7,6 +7,7 @@ const operations = [];
 const translations = [];
 let fullCanvasFills = 0;
 let waterGradientCreates = 0;
+let driftDraws = 0;
 const gradient = { addColorStop() {} };
 const context = new Proxy({
   createLinearGradient(x0, y0, x1, y1) {
@@ -33,7 +34,11 @@ const context = new Proxy({
       operations.push(key);
     };
   },
-  set(target, key, value) { target[key] = value; return true; }
+  set(target, key, value) {
+    if (key === 'fillStyle' && value === '#925b35') driftDraws++;
+    target[key] = value;
+    return true;
+  }
 });
 const element = id => {
   const classes = new Set(id === 'settingsPanel' ? ['hidden'] : []);
@@ -41,6 +46,7 @@ const element = id => {
     id,
     textContent: '',
     value: '',
+    style: {},
     select() { this.selected = true; },
     classList: {
       add(name) { classes.add(name); },
@@ -114,7 +120,7 @@ assert(operations.filter(name => name === 'bezierCurveTo').length > 5, 'moving w
 assert(operations.filter(name => name === 'arc').length > 20, 'layered riverside trees should be drawn');
 assert.equal(waterGradientCreates, 1, 'the water gradient should be reused between frames');
 const html = fs.readFileSync('app/src/main/assets/index.html', 'utf8');
-for (const id of ['settings', 'openingSettings', 'settingsPanel', 'profileName', 'avatar', 'quality', 'performanceInfo', 'bestScore', 'totalRuns', 'totalDodged', 'legacyDodged', 'playerTag', 'backupText', 'exportProgress', 'importProgress']) {
+for (const id of ['settings', 'openingSettings', 'settingsPanel', 'profileName', 'avatar', 'quality', 'performanceInfo', 'bestScore', 'totalRuns', 'totalDodged', 'legacyDodged', 'playerTag', 'backupText', 'exportProgress', 'importProgress', 'stageLabel', 'stageDistance', 'stageProgress', 'stageToast']) {
   assert(html.includes(`id="${id}"`), `the settings screen needs ${id}`);
 }
 events.get('settings:click')();
@@ -236,4 +242,35 @@ sandbox.document.hidden = true;
 fullCanvasFills = 0;
 nextFrame(104050);
 assert.equal(fullCanvasFills, 0, 'hidden pages should not redraw the canvas');
+
+// A long safe run should reach all four stages and draw the new lateral hazard.
+sandbox.document.hidden = false;
+sandboxMath.random = () => 0.2;
+const source = fs.readFileSync('app/src/main/assets/game.js', 'utf8');
+const inspectedSource = source.replace('  requestAnimationFrame(frame);\n})();',
+  '  window.__inspectObstacles = () => obstacles;\n  requestAnimationFrame(frame);\n})();');
+assert.notEqual(inspectedSource, source, 'the smoke test should inspect the active obstacle list');
+vm.runInNewContext(inspectedSource, sandbox);
+events.get('play:click')();
+events.get('game:pointerdown')({ pointerId: 9, clientX: 440 });
+const stagesSeen = new Set();
+const driftPositions = new WeakMap();
+let driftMoved = false;
+for (let time = 105000; time < 135000; time += 50) {
+  nextFrame(time);
+  stagesSeen.add(elements.get('stageLabel').textContent);
+  for (const item of sandbox.window.__inspectObstacles()) {
+    if (item.kind !== 'drift') continue;
+    assert(item.x >= 84 && item.x <= 366, 'drifting logs must stay within the river');
+    if (driftPositions.has(item) && Math.abs(item.x - driftPositions.get(item)) > 0.1) driftMoved = true;
+    driftPositions.set(item, item.x);
+  }
+}
+assert.equal(stagesSeen.size, 4, 'a safe run should pass through four distinct stages');
+assert(elements.get('stageLabel').textContent.includes('Río bravo'), 'the final stage should remain playable without a distance cap');
+assert(elements.get('stageDistance').textContent.includes('sin fin'), 'the final stage should be endless');
+assert.equal(elements.get('stageProgress').style.width, '100%', 'the final progress indicator should be full');
+assert(driftDraws > 0, 'later stages should render moving driftwood');
+assert(driftMoved, 'drifting logs must move sideways during play');
+assert(elements.get('stageToast').classList.contains('hidden'), 'stage announcements should disappear after a short time');
 console.log('Visual smoke test passed');
