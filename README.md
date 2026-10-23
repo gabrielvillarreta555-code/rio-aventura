@@ -54,6 +54,11 @@ desplazan lateralmente y pueden rebotar en los límites del río. Siguen valiend
 los controles, las tres vidas y las colisiones de rocas y troncos anteriores.
 Los tramos son parte de cada viaje: no son niveles desbloqueables ni se guardan
 por separado. El récord y las estadísticas locales mantienen su formato.
+Al llegar a cada tramo nuevo se recupera una vida si falta alguna (hasta un
+máximo de tres) y se recibe un escudo de tres segundos. Si ya hay tres vidas,
+se concede solo el escudo. El escudo bloquea choques; un obstáculo que lo toque
+no cuenta como esquiva ni suma puntos. Las recompensas son temporales de esa
+partida, no monedas ni compras.
 
 ## APK
 
