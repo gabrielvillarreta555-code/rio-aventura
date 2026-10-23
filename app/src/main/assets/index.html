@@ -50,6 +50,9 @@
     .statsGrid div { padding: 12px; border-radius: 14px; background: #0b2f3a; }
     .statsGrid strong { display: block; font-size: 21px; color: #ffdd79; }
     .statsGrid small { color: #c8e7e4; }
+    .rankCard { margin-top: 9px; padding: 11px; border-radius: 14px; background: #0b2f3a; }
+    .rankCard strong { display: block; color: #ffdd79; }
+    .rankCard small { color: #c8e7e4; }
     #backupText { min-height: 96px; resize: vertical; font: 13px ui-monospace, monospace; }
     .backupActions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
     .backupActions button { min-height: 44px; padding: 10px 14px; border: 1px solid #b2e5df88; border-radius: 12px; background: #0b4b58; color: white; font: 700 14px system-ui, sans-serif; }
@@ -85,6 +88,11 @@
         <div id="profileNotice" role="status" aria-live="polite"></div>
         <h3>Estadísticas</h3>
         <div class="statsGrid"><div><strong id="bestScore">0</strong><small>Récord de puntos</small></div><div><strong id="totalRuns">0</strong><small>Viajes terminados</small></div><div><strong id="totalDodged">0</strong><small>Esquivas confirmadas desde 1.7</small></div><div><strong id="totalDistance">0 m</strong><small>Distancia estimada en viajes terminados</small></div><div><strong id="legacyDodged">0</strong><small>Puntos anteriores estimados</small></div></div>
+        <h3>Rangos de capitán</h3>
+        <p>Acumula distancia y esquivas confirmadas. Al terminar un viaje después de cumplir ambos objetivos, recibirás el rango y su premio una sola vez.</p>
+        <div class="rankCard"><strong>🥉 Explorador</strong><small id="rank-explorer">0/250 m · 0/3 esquivas · premio +10 🪙</small></div>
+        <div class="rankCard"><strong>🥈 Navegante</strong><small id="rank-navigator">0/800 m · 0/15 esquivas · premio +20 🪙</small></div>
+        <div class="rankCard"><strong>🥇 Capitán del río</strong><small id="rank-captain">0/2000 m · 0/40 esquivas · premio +40 🪙</small></div>
         <h3>Tienda y garaje</h3>
         <p>Saldo: <span id="garageCoins">0 monedas</span>. Gana monedas al terminar viajes y suma tres extra por cada moneda flotante recogida. Las lanchas solo cambian de color, no dan ventaja.</p>
         <div class="boatCard"><div><strong>🚤 Clásica</strong><small>Incluida</small></div><button id="boat-classic" type="button">Equipada</button></div>
