@@ -112,6 +112,11 @@
       for (const id in DOCK_HUTS) names.add(DOCK_HUTS[id]);
       for (const name of names) art.sprite(name);
       for (const dock of world.docks) labelFor(dock);
+      if (window.RioQuests) {
+        for (const person of window.RioQuests.npcs) npcSprite(person);
+        markSprite(1);
+        markSprite(2);
+      }
     }
 
     // ---------- Trozos de tierra ----------
@@ -366,6 +371,70 @@
       g.fillText(text.length > 22 ? `${text.slice(0, 21)}…` : text, x + w / 2, y + h / 2 + 1);
     }
 
+
+    // ---------- Personajes de los muelles ----------
+    function paintNpc(g, npc) {
+      const look = npc.look;
+      g.fillStyle = 'rgba(0,50,60,0.3)';
+      g.beginPath(); g.ellipse(0, 0, 15, 5, 0, 0, TAU); g.fill();
+      g.fillStyle = look.shirt;
+      g.beginPath(); g.moveTo(-10, 0); g.lineTo(-8, -26); g.quadraticCurveTo(0, -31, 8, -26); g.lineTo(10, 0); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(0,0,0,0.18)';
+      g.fillRect(-1, -26, 2, 26);
+      g.fillStyle = look.skin;
+      g.beginPath(); g.arc(0, -35, 9, 0, TAU); g.fill();
+      g.fillStyle = '#2b2018';
+      g.beginPath(); g.arc(-3.2, -35, 1.2, 0, TAU); g.arc(3.2, -35, 1.2, 0, TAU); g.fill();
+      g.fillStyle = look.hatColor;
+      if (look.hat === 'straw') { g.beginPath(); g.ellipse(0, -42, 15, 4, 0, 0, TAU); g.fill(); g.beginPath(); g.arc(0, -43, 8, Math.PI, 0); g.fill(); }
+      else if (look.hat === 'cap') { g.beginPath(); g.arc(0, -39, 9.5, Math.PI, 0); g.fill(); g.fillRect(-9, -40, 18, 3); g.fillStyle = '#1f4f8a'; g.fillRect(-4, -45, 8, 3); }
+      else if (look.hat === 'helmet') { g.beginPath(); g.arc(0, -39, 10, Math.PI, 0); g.fill(); g.fillRect(-11, -40, 22, 3); }
+      else if (look.hat === 'hood') { g.beginPath(); g.arc(0, -37, 11, Math.PI * 1.05, Math.PI * 1.95); g.lineTo(9, -30); g.lineTo(-9, -30); g.closePath(); g.globalAlpha = 0.9; g.fill(); g.globalAlpha = 1; }
+      else if (look.hat === 'explorer') { g.beginPath(); g.ellipse(0, -42, 14, 3.5, 0, 0, TAU); g.fill(); g.beginPath(); g.arc(0, -43, 7.5, Math.PI, 0); g.fill(); g.fillStyle = '#6a4a22'; g.fillRect(-7.5, -45, 15, 2); }
+    }
+
+    function paintMark(g, kind) {
+      g.fillStyle = kind === 2 ? '#3ed17a' : '#ffd23f';
+      g.strokeStyle = 'rgba(10,40,50,0.85)';
+      g.lineWidth = 3;
+      g.beginPath(); g.arc(0, 0, 11, 0, TAU); g.fill(); g.stroke();
+      g.fillStyle = '#12313c';
+      g.font = '900 16px system-ui, sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(kind === 2 ? '✓' : '!', 0, 1);
+    }
+
+    const npcSprites = Object.create(null);
+    function npcSprite(npc) {
+      if (npcSprites[npc.id]) return npcSprites[npc.id];
+      const w = 56;
+      const h = 66;
+      const element = makeCanvas(Math.ceil(w * 2), Math.ceil(h * 2));
+      const item = { canvas: element, w, h, ox: w / 2, oy: h - 8, paint: g => paintNpc(g, npc) };
+      if (element) {
+        const g = element.getContext('2d');
+        g.scale(2, 2);
+        g.translate(w / 2, h - 8);
+        paintNpc(g, npc);
+      }
+      return (npcSprites[npc.id] = item);
+    }
+    const markSprites = [null, null, null];
+    function markSprite(kind) {
+      if (markSprites[kind]) return markSprites[kind];
+      const size = 30;
+      const element = makeCanvas(size * 2, size * 2);
+      const item = { canvas: element, w: size, h: size, ox: size / 2, oy: size / 2, paint: g => paintMark(g, kind) };
+      if (element) {
+        const g = element.getContext('2d');
+        g.scale(2, 2);
+        g.translate(size / 2, size / 2);
+        paintMark(g, kind);
+      }
+      return (markSprites[kind] = item);
+    }
+
     // ---------- Objetos ordenados por profundidad ----------
     const items = [];
     function pushItem(y, kind, ref, extra) {
@@ -397,7 +466,7 @@
       ctx.beginPath(); ctx.arc(tipX, tipY - 1, 3.4, 0, TAU); ctx.fill();
     }
 
-    function drawDockBuilding(dock, cam, status) {
+    function drawDockBuilding(dock, cam, status, f) {
       const p = dock.pier;
       const dx = dock.dir === 'E' ? 1 : dock.dir === 'W' ? -1 : 0;
       const dy = dock.dir === 'S' ? 1 : dock.dir === 'N' ? -1 : 0;
@@ -405,6 +474,12 @@
       const by = (dock.dir === 'N' ? p.y : dock.dir === 'S' ? p.y + p.h : p.y + p.h / 2) + dy * 44 - cam.y + 14;
       blit(art.sprite(DOCK_HUTS[dock.id]), bx, by, 0.62, 0.62, status === 'locked' ? 0.7 : 1);
       blit(labelFor(dock), bx, by - 78, 1, 1, status === 'locked' ? 0.75 : 1);
+      const person = window.RioQuests && window.RioQuests.npc(dock.id);
+      if (person) {
+        blit(npcSprite(person), bx + 38, by + 10, 1, 1, status === 'locked' ? 0.75 : 1);
+        const mark = f.dockMark ? f.dockMark[dock.id] : 0;
+        if (mark) blit(markSprite(mark), bx + 38, by - 60 + Math.sin(time * 4 + bx) * 3, 1, 1, 1);
+      }
       if (status === 'visited') {
         ctx.fillStyle = '#ffe58a';
         ctx.beginPath(); ctx.arc(bx + 84, by - 90, 5, 0, TAU); ctx.fill();
@@ -507,7 +582,8 @@
         if (dx < -90 || dx > WIDTH + 90 || dy < -90 || dy > height + 90) continue;
         const status = f.dockStatus[dock.id];
         const pulse = 0.5 + 0.5 * Math.sin(time * 3);
-        ctx.strokeStyle = status === 'locked' ? 'rgba(220,230,232,0.55)' : `rgba(255,222,110,${0.6 + 0.3 * pulse})`;
+        const deliver = f.dockMark && f.dockMark[dock.id] === 2;
+        ctx.strokeStyle = status === 'locked' ? 'rgba(220,230,232,0.55)' : deliver ? `rgba(80,235,140,${0.7 + 0.3 * pulse})` : `rgba(255,222,110,${0.6 + 0.3 * pulse})`;
         ctx.lineWidth = 3;
         ctx.setLineDash([9, 7]);
         ctx.beginPath();
@@ -576,7 +652,7 @@
         } else if (item.kind === 3) {
           const status = f.dockStatus[ref.id];
           drawPier(ref, cam, status);
-          drawDockBuilding(ref, cam, status);
+          drawDockBuilding(ref, cam, status, f);
         } else drawBoat(f, cam);
       }
       stats.drawnItems = n;
@@ -607,7 +683,7 @@
       const k = size / world.size;
       for (const dock of world.docks) {
         const status = f.dockStatus[dock.id];
-        mctx.fillStyle = status === 'locked' ? '#9aa6a8' : status === 'visited' ? '#ffffff' : '#ffd36a';
+        mctx.fillStyle = f.dockMark && f.dockMark[dock.id] === 2 ? '#3ed17a' : status === 'locked' ? '#9aa6a8' : status === 'visited' ? '#ffffff' : '#ffd36a';
         mctx.beginPath(); mctx.arc(dock.x * k, dock.y * k, dock.kind === 'port' ? 3.4 : 2.8, 0, TAU); mctx.fill();
       }
       mctx.strokeStyle = 'rgba(255,255,255,0.75)';
