@@ -200,7 +200,7 @@ test('la laguna pide descubrir las ruinas y el rango Navegante, y se abre al cum
   assert.match(game.api().seaHintText(), /Navegante/);
   assert.equal(game.api().state(), 'playing');
   game.click('pause');
-  game.click('exitSea');
+  game.click('saveExit'); game.click('confirmYes');
   game.sail('ruinas'); game.arrive(20);
   game.click('exploreSea');
   assert.equal(game.api().seaStatus().laguna, 'open');
@@ -341,8 +341,9 @@ test('si el guardado del historial falla, el cobro queda pendiente y se completa
 test('salir al menú vuelve a la navegación clásica, que sigue funcionando', () => {
   const game = explore();
   game.click('pause');
-  assert(!game.hidden('exitSea'));
-  game.click('exitSea');
+  assert(!game.hidden('saveExit'));
+  game.click('saveExit');
+  game.click('confirmYes');
   assert.equal(game.api().mode(), 'classic');
   assert(game.hidden('seaMap'));
   assert.match(game.html('title'), /Río/);

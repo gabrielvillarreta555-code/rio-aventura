@@ -70,7 +70,7 @@ function launch({ store = makeStore(), pixelRatio, sprites = true, random = () =
       set(target, key, value) { target[key] = value; return true; }
     });
   };
-  const initiallyHidden = new Set(['settingsPanel', 'finishTrip', 'mapPanel', 'arrivalCard', 'mapHint', 'seaMap', 'seaBrake', 'joy', 'seaHint', 'exitSea', 'talk', 'deliveryCard', 'questHud', 'dialogPanel']);
+  const initiallyHidden = new Set(['settingsPanel', 'finishTrip', 'mapPanel', 'arrivalCard', 'mapHint', 'seaMap', 'seaBrake', 'joy', 'seaHint', 'exitSea', 'talk', 'deliveryCard', 'questHud', 'dialogPanel', 'saveExit', 'endTrip', 'confirmPanel']);
   const element = id => {
     const classes = new Set(initiallyHidden.has(id) ? ['hidden'] : []);
     const item = {

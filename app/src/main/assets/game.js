@@ -49,6 +49,9 @@
   const brakeButton = document.getElementById('seaBrake');
   const seaHint = document.getElementById('seaHint');
   const talkButton = document.getElementById('talk');
+  const saveExitButton = document.getElementById('saveExit');
+  const endTripButton = document.getElementById('endTrip');
+  const confirmPanel = document.getElementById('confirmPanel');
   const deliveryCard = document.getElementById('deliveryCard');
   const questHud = document.getElementById('questHud');
   const dialogPanel = document.getElementById('dialogPanel');
@@ -159,6 +162,7 @@
   let seaBumpCool = 0;
   let seaToastIn = 0;
   let dialogDock = '';
+  let confirmAction = '';
   let dialogChat = 0;
   const questDeclined = new Set();
   let joyOrigin = { x: 0, y: 0 };
@@ -898,7 +902,10 @@
     // El mapa solo se abre entre viajes: no con un viaje en pausa ni uno por retomar.
     openMapButton.classList.toggle('hidden', mode === 'sea' || Boolean(interrupted) || state === 'paused');
     exploreSeaButton.classList.toggle('hidden', mode === 'sea' || Boolean(interrupted) || state === 'paused');
-    exitSeaButton.classList.toggle('hidden', mode !== 'sea');
+    exitSeaButton.classList.toggle('hidden', mode !== 'sea' || state === 'paused');
+    // En pausa: reanudar, guardar y salir, o terminar y cobrar (solo en el río clásico).
+    saveExitButton.classList.toggle('hidden', state !== 'paused');
+    endTripButton.classList.toggle('hidden', state !== 'paused' || mode === 'sea');
     if (mode === 'sea') seaControls(false);
     overlay.classList.remove('hidden');
   }
@@ -1013,7 +1020,7 @@
     heldKeys.left = false;
     heldKeys.right = false;
     pause.textContent = '▶';
-    showOverlay('En pausa', mode === 'sea' ? `Llevas ${Math.floor(seaTrip.dist)} m y ${seaTrip.pickups} monedas sin cobrar: se cobran al llegar a un muelle.` : `Llevas ${score} puntos.`, 'Continuar');
+    showOverlay('En pausa', mode === 'sea' ? `Llevas ${Math.floor(seaTrip.dist)} m y ${seaTrip.pickups} monedas sin cobrar: se cobran al llegar a un muelle.` : `Llevas ${score} puntos.`, 'Reanudar');
     if (mode === 'sea') { seaInput.x = 0; seaInput.y = 0; seaInput.brake = false; joyPointer = null; joyBase.classList.add('hidden'); }
     persistTrip();
   }
@@ -1182,13 +1189,73 @@
     updateStageHud();
   }
 
-  function offerInterruptedTrip(trip) {
+  function offerInterruptedTrip(trip, savedByPlayer = false) {
     interrupted = trip;
     const route = trip.route ? world.routeById(trip.route) : null;
-    showOverlay('Viaje<br>interrumpido',
+    showOverlay(savedByPlayer ? 'Viaje<br>guardado' : 'Viaje<br>interrumpido',
       `Tu viaje ${route ? `hacia ${route.destination}` : 'anterior'} quedó guardado: ${trip.score} puntos y ${Math.floor(trip.distance)} m. Puedes continuarlo con 3 s de escudo o cobrar lo conseguido.`,
       'Continuar viaje');
   }
+
+  // ---- Pausa, guardar y salir ----
+  function classicToTitle() {
+    setActiveRoute(null);
+    launchRouteId = null;
+    reset();
+    interrupted = null;
+    state = 'ready';
+    showOverlay('Río<br>Aventura', titleMessage, '¡Jugar!');
+    updateCoinHud();
+  }
+
+  const confirmTexts = {
+    save: ['¿Guardar y salir al menú?', 'Tu progreso queda guardado y podrás continuarlo desde el menú.'],
+    end: ['¿Terminar el viaje?', 'Se terminará el viaje y se cobrarán las monedas conseguidas hasta ahora.']
+  };
+
+  function showConfirm(action) {
+    if (state !== 'paused' && state !== 'arrived') return;
+    confirmAction = action;
+    const text = confirmTexts[action];
+    document.getElementById('confirmTitle').textContent = text[0];
+    document.getElementById('confirmText').textContent = mode === 'sea' && action === 'save'
+      ? 'Tu posición, tus encargos y tu pesca quedan guardados. Volverás a este punto al entrar de nuevo.' : text[1];
+    confirmPanel.classList.remove('hidden');
+  }
+
+  function hideConfirm() {
+    confirmAction = '';
+    confirmPanel.classList.add('hidden');
+  }
+
+  // Guarda y vuelve al menú sin perder nada: en el río clásico el viaje queda guardado y se puede continuar.
+  function saveAndExit() {
+    if (mode === 'sea') { exitSea(); return true; }
+    if (state !== 'paused' || !persistTrip()) return false;
+    const trip = readTrip();
+    state = 'ready';
+    direction = 0;
+    activePointerId = null;
+    if (trip) offerInterruptedTrip(trip, true);
+    else classicToTitle();
+    return true;
+  }
+
+  function confirmYes() {
+    const action = confirmAction;
+    hideConfirm();
+    if (action === 'save') {
+      if (!saveAndExit()) {
+        showOverlay('No se pudo<br>guardar', 'No se pudo guardar el viaje. Puedes terminarlo y cobrar lo conseguido, o seguir jugando.', 'Reanudar');
+      }
+    } else if (action === 'end' && state === 'paused' && mode === 'classic') finish();
+  }
+
+  saveExitButton.addEventListener('click', () => showConfirm('save'));
+  endTripButton.addEventListener('click', () => showConfirm('end'));
+  document.getElementById('confirmYes').addEventListener('click', confirmYes);
+  document.getElementById('confirmNo').addEventListener('click', hideConfirm);
+
 
   function recoverOnStartup() {
     if (!economyError && economy.events.length > compactAfter) saveEconomy({ ...economy });
@@ -1658,10 +1725,15 @@
   mapHint.addEventListener('click', dismissMapHint);
   // Botón «atrás» de Android: MainActivity lo llama; devuelve true si el juego lo atendió.
   window.rioAventuraBack = () => {
+    if (confirmAction) { hideConfirm(); return true; }
     if (dialogDock) { closeDialog(); return true; }
     if (mapOpen) { closeMap(); return true; }
     if (settingsReturnState !== null) { closeSettings(); return true; }
     if (state === 'playing') { pauseTrip(); return true; }
+    // En el menú de pausa o en la pantalla de un muelle, «atrás» pregunta si guardar y salir.
+    if (state === 'paused' || (mode === 'sea' && state === 'arrived')) { showConfirm('save'); return true; }
+    // Tras terminar un viaje clásico, «atrás» vuelve al menú.
+    if (mode === 'classic' && (state === 'over' || state === 'arrived')) { classicToTitle(); return true; }
     return false;
   };
 
@@ -2397,6 +2469,7 @@
     });
   }
   window.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { window.rioAventuraBack(); return; }
     if (mode === 'sea') { seaKeyChange(event, true); return; }
     if (state !== 'playing') return;
     if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') heldKeys.left = true;
@@ -2434,7 +2507,7 @@
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && settingsReturnState === 'playing') {
       settingsReturnState = 'paused';
-      showOverlay('En pausa', `Llevas ${score} puntos.`, 'Continuar');
+      showOverlay('En pausa', `Llevas ${score} puntos.`, 'Reanudar');
     }
     if (document.hidden && state === 'playing') pauseTrip();
     else if (document.hidden) persistTrip();
