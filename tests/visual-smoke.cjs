@@ -91,6 +91,7 @@ const sandbox = {
   window: { addEventListener(name, callback) { events.set(`window:${name}`, callback); } },
   localStorage: {
     getItem(key) { return storage.get(key) ?? null; },
+    removeItem(key) { storage.delete(key); },
     setItem(key, value) {
       if (blockEconomyWrites && key === 'rio-aventura-economy-v1') throw new Error('storage full');
       storage.set(key, String(value));
@@ -100,7 +101,14 @@ const sandbox = {
   Math: sandboxMath
 };
 
-vm.runInNewContext(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
+// Relanzamiento con cierre limpio: las pruebas anteriores abandonan viajes sin terminar y,
+// como un teléfono real, el juego ofrecería retomarlos. Los casos de viaje interrumpido
+// usan vm.runInNewContext directamente.
+function launch(code, context) {
+  storage.delete('rio-aventura-trip-v1');
+  vm.runInNewContext(code, context);
+}
+launch(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
 storage.delete('rio-aventura-stats-v1');
 assert.equal(canvas.height, 1000, 'the playfield should fit a tall phone');
 function boatXAt(time) {
@@ -217,7 +225,7 @@ elements.get('backupText').value = backup;
 events.get('importProgress:click')();
 assert.equal(JSON.parse(storage.get('rio-aventura-stats-v2')).runs, 1, 'restoring twice must not duplicate trips');
 events.get('closeSettings:click')();
-vm.runInNewContext(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
+launch(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
 events.get('openingSettings:click')();
 assert.equal(elements.get('profileName').value, 'Gabriel', 'guest name should survive a fresh game launch');
 assert.equal(elements.get('avatar').textContent, '🧒', 'avatar should survive a fresh game launch');
@@ -275,7 +283,7 @@ for (let time = 40500; time < 40600; time += 16) nextFrame(time);
 assert(boatColors.includes('#447aab'), 'the selected boat should change the rendered hull color');
 storage.set('rio-aventura-stats-v1', JSON.stringify({ runs: 5, dodged: 17, distance: 520 }));
 storage.delete('rio-aventura-stats-v2');
-vm.runInNewContext(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
+launch(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
 events.get('openingSettings:click')();
 assert.equal(elements.get('totalRuns').textContent, '5', 'legacy trip count should migrate');
 assert.equal(elements.get('garageCoins').textContent, `${coinsAfterPurchase} monedas`, 'the wallet should survive a fresh launch');
@@ -318,7 +326,7 @@ const source = fs.readFileSync('app/src/main/assets/game.js', 'utf8');
 const inspectedSource = source.replace('  requestAnimationFrame(frame);\n})();',
   '  window.__inspectObstacles = () => obstacles;\n  window.__inspectGame = () => ({ lives, shieldTimer, stageIndex, runDistance });\n  window.__setLivesForTest = value => { lives = value; updateHud(); };\n  window.__setBoatCenterForTest = () => { boat.x = width / 2; boat.vx = 0; };\n  window.__addCoinAtBoatForTest = () => { collectibles.push({ x: boat.x, y: boat.y, phase: 0 }); };\n  window.__setStatsForTest = (distance, dodged, runs) => { stats.distance = distance; stats.dodged = dodged; if (runs !== undefined) stats.runs = runs; };\n  window.__setRunForTest = (distance, dodged, pickups) => { runDistance = distance; score = dodged; collectedCoins = pickups; updateHud(); };\n  window.__finishForTest = finish;\n  requestAnimationFrame(frame);\n})();');
 assert.notEqual(inspectedSource, source, 'the smoke test should inspect the active obstacle list');
-vm.runInNewContext(inspectedSource, sandbox);
+launch(inspectedSource, sandbox);
 events.get('play:click')();
 events.get('game:pointerdown')({ pointerId: 9, clientX: 440 });
 const stagesSeen = new Set();
@@ -358,7 +366,7 @@ assert(elements.get('stageToast').classList.contains('hidden'), 'stage announcem
 
 // Missing health is restored at a stage boundary and shielded contact causes no damage.
 sandboxMath.random = () => 0.5;
-vm.runInNewContext(inspectedSource, sandbox);
+launch(inspectedSource, sandbox);
 events.get('play:click')();
 events.get('game:pointerdown')({ pointerId: 10, clientX: 440 });
 sandbox.window.__setLivesForTest(2);
@@ -385,7 +393,7 @@ assert(rewardSeen, 'the healing stage boundary should be reached');
 assert(shieldBlocked, 'an obstacle should contact the shield in the test');
 
 // Floating coins are optional pickups, paid once with the usual end-of-run event.
-vm.runInNewContext(inspectedSource, sandbox);
+launch(inspectedSource, sandbox);
 events.get('play:click')();
 const eventsBeforePickupRun = JSON.parse(storage.get('rio-aventura-economy-v1')).events.length;
 sandbox.window.__addCoinAtBoatForTest();
@@ -403,7 +411,7 @@ assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, p
   'a finished pickup run must not grant the reward twice');
 
 // All completed rank goals should award once, in the same wallet write as the trip.
-vm.runInNewContext(inspectedSource, sandbox);
+launch(inspectedSource, sandbox);
 events.get('play:click')();
 const eventsBeforeRanks = JSON.parse(storage.get('rio-aventura-economy-v1')).events.length;
 sandbox.window.__setStatsForTest(125, 1);
@@ -421,16 +429,17 @@ events.get('openingSettings:click')();
 assert(elements.get('rank-explorer').textContent.includes('Objetivo listo'),
   'an unpaid rank should remain ready to claim after a failed save');
 blockEconomyWrites = false;
-vm.runInNewContext(inspectedSource, sandbox);
-events.get('play:click')();
-sandbox.window.__finishForTest();
-const rankedEconomy = JSON.parse(storage.get('rio-aventura-economy-v1'));
-assert.equal(rankedEconomy.events.length, eventsBeforeRanks + 4, 'three ranks and one trip should form four events');
-assert.deepEqual(Array.from(rankedEconomy.events.slice(-3), event => event.rank),
+assert(storage.has('rio-aventura-settle-v1'), 'a trip whose wallet save failed must stay pending');
+launch(inspectedSource, sandbox);
+const recoveredEconomy = JSON.parse(storage.get('rio-aventura-economy-v1'));
+assert.equal(recoveredEconomy.events.length, eventsBeforeRanks + 4,
+  'the next launch should complete the unsaved trip and its three rank prizes exactly once');
+assert(!storage.has('rio-aventura-settle-v1'), 'a completed settlement must leave no pending record');
+assert.deepEqual(Array.from(recoveredEconomy.events.slice(-3), event => event.rank),
   ['explorer', 'navigator', 'captain'], 'all ranks should be unlocked in order');
-assert(rankedEconomy.events.slice(-3).every(event => event.type === 'earn' && event.amount <= 80),
+assert(recoveredEconomy.events.slice(-3).every(event => event.type === 'earn' && event.amount <= 80),
   'rank prizes should remain readable as ordinary earnings by the previous version');
-assert.equal(rankedEconomy.events.slice(-3).reduce((sum, event) => sum + event.amount, 0), 70,
+assert.equal(recoveredEconomy.events.slice(-3).reduce((sum, event) => sum + event.amount, 0), 70,
   'rank prizes should be credited once in the wallet');
 assert(elements.get('playerTag').textContent.includes('Capitán del río'), 'the highest rank should appear beside the player');
 assert(elements.get('playerTag').textContent.includes('🥇'), 'the highest rank should have its own badge');
@@ -438,6 +447,10 @@ assert(!elements.get('rankToast').classList.contains('hidden'), 'a rank-up shoul
 assert(elements.get('rankToast').textContent.includes('Capitán del río'), 'celebration should name the new rank');
 for (let time = 150000; time <= 153500; time += 50) nextFrame(time);
 assert(elements.get('rankToast').classList.contains('hidden'), 'rank celebration should dismiss automatically');
+events.get('play:click')();
+sandbox.window.__finishForTest();
+const rankedEconomy = JSON.parse(storage.get('rio-aventura-economy-v1'));
+assert.equal(rankedEconomy.events.length, eventsBeforeRanks + 5, 'the recovered trip plus the new trip should add two trip events');
 events.get('openingSettings:click')();
 for (const id of ['rank-explorer', 'rank-navigator', 'rank-captain']) {
   assert(elements.get(id).textContent.includes('Desbloqueado'), `${id} should show its permanent state`);
@@ -460,7 +473,7 @@ assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, r
 events.get('exportProgress:click')();
 assert.equal(JSON.parse(elements.get('backupText').value).economy.events.length, rankedEconomy.events.length,
   'the manual backup should include earned ranks');
-vm.runInNewContext(inspectedSource, sandbox);
+launch(inspectedSource, sandbox);
 assert(elements.get('playerTag').textContent.includes('Capitán del río'), 'the rank should survive a fresh game launch');
 assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).selected, 'aurora', 'the chosen rank boat should survive a relaunch');
 boatColors.length = 0;
@@ -474,7 +487,7 @@ assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, r
 // Damaged stored economy is never silently replaced by an empty wallet.
 const savedEconomy = storage.get('rio-aventura-economy-v1');
 storage.set('rio-aventura-economy-v1', '{broken');
-vm.runInNewContext(source, sandbox);
+launch(source, sandbox);
 events.get('openingSettings:click')();
 assert(elements.get('garageNotice').textContent.includes('Restaura una copia'), 'corrupt progress should request recovery');
 assert.equal(elements.get('coinHud').textContent, '🪙 !', 'corrupt progress should be visible outside the garage');
@@ -495,7 +508,7 @@ sandbox.Date = class extends NativeDate {
   constructor(...args) { if (args.length) super(...args); else super(simulatedNow); }
   static now() { return simulatedNow; }
 };
-vm.runInNewContext(inspectedSource, sandbox);
+launch(inspectedSource, sandbox);
 events.get('play:click')();
 let dailyStart = JSON.parse(storage.get('rio-aventura-economy-v1')).events.length;
 sandbox.window.__setRunForTest(150, 4, 2);
@@ -504,12 +517,14 @@ sandbox.window.__finishForTest();
 assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, dailyStart,
   'a failed wallet write must not claim daily missions or store a partial trip');
 blockEconomyWrites = false;
-vm.runInNewContext(inspectedSource, sandbox);
+launch(inspectedSource, sandbox);
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.slice(dailyStart).filter(event => event.run).length, 1,
+  'the next launch should record the trip whose wallet save failed, exactly once');
 events.get('play:click')();
 sandbox.window.__setRunForTest(150, 4, 2);
 sandbox.window.__finishForTest();
 let dailyEvents = JSON.parse(storage.get('rio-aventura-economy-v1')).events.slice(dailyStart);
-assert.equal(dailyEvents.filter(event => event.run).length, 1, 'the daily test trip should be recorded once');
+assert.equal(dailyEvents.filter(event => event.run).length, 2, 'the recovered trip and the new trip should each be recorded once');
 assert.deepEqual(Array.from(dailyEvents.filter(event => event.dailyMission), event => event.dailyMission),
   ['distance', 'dodged', 'pickups'], 'all three completed daily missions should pay automatically');
 assert.equal(dailyEvents.filter(event => event.dailyMission).reduce((sum, event) => sum + event.amount, 0), 15,
@@ -522,7 +537,7 @@ events.get('exportProgress:click')();
 assert.equal(JSON.parse(elements.get('backupText').value).economy.events.length,
   JSON.parse(storage.get('rio-aventura-economy-v1')).events.length,
   'the backup should include daily mission progress and rewards');
-vm.runInNewContext(inspectedSource, sandbox);
+launch(inspectedSource, sandbox);
 events.get('openingSettings:click')();
 assert(elements.get('daily-distance').textContent.includes('Completada'), 'daily claims should survive a relaunch');
 events.get('closeSettings:click')();
@@ -534,7 +549,7 @@ dailyEvents = JSON.parse(storage.get('rio-aventura-economy-v1')).events.slice(da
 assert.equal(dailyEvents.filter(event => event.dailyMission).length, 0,
   'repeating the mission on the same day must not pay again');
 simulatedNow = NativeDate.parse('2030-01-16T12:00:00Z');
-vm.runInNewContext(inspectedSource, sandbox);
+launch(inspectedSource, sandbox);
 events.get('play:click')();
 dailyStart = JSON.parse(storage.get('rio-aventura-economy-v1')).events.length;
 sandbox.window.__setRunForTest(150, 4, 2);
@@ -543,7 +558,7 @@ dailyEvents = JSON.parse(storage.get('rio-aventura-economy-v1')).events.slice(da
 assert.equal(dailyEvents.filter(event => event.dailyMission).length, 3,
   'a new phone day should make daily missions available again');
 simulatedNow = NativeDate.parse('2030-01-15T12:00:00Z');
-vm.runInNewContext(inspectedSource, sandbox);
+launch(inspectedSource, sandbox);
 events.get('play:click')();
 dailyStart = JSON.parse(storage.get('rio-aventura-economy-v1')).events.length;
 sandbox.window.__setRunForTest(150, 4, 2);
@@ -567,3 +582,4 @@ assert.equal(storage.get('rio-aventura-economy-v1'), walletBeforeBadImport,
   'a duplicate-claim backup must not modify the wallet');
 delete sandbox.Date;
 console.log('Visual smoke test passed');
+require('./progress-safety.cjs');
