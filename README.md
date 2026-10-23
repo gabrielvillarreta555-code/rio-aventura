@@ -283,6 +283,66 @@ diario de pendientes, modos, presupuesto de dibujo y calidad automática). `node
 joystick: cuatro direcciones, rodear la isla por los dos canales, atracar en la aldea y recargar;
 con `RECORD_DIR=<carpeta>` graba un vídeo. Capturas y vídeo en `docs/world-2.6/`.
 
+## Río Aventura 2.7: personajes y encargos de transporte
+
+El mundo libre de 2.6 tiene ahora gente y trabajo. **Todo se juega en el mundo libre**: no se puede
+completar nada desde un menú.
+
+- **Personajes:** una persona en cada uno de los seis muelles (Capitana Marisol en el puerto, Tomás el
+  Pescador, Abuela Raíz, Ingeniera Lía, Profesor Quillay y Luciana la Farera), con nombre, rol,
+  saludo que cambia según tu reputación y varias frases de charla. Se dibujan en el muelle (sprites
+  en caché) y llevan una marca **«!»** cuando tienen un encargo que puedes aceptar y **«✓»** (con el
+  anillo del muelle en verde) cuando allí hay algo que entregar.
+- **Hablar:** tras atracar aparece **«💬 Hablar con …»**. El panel táctil (botones de ≥ 44 px) muestra
+  los tres encargos del personaje con tipo, destino, distancia, dificultad, pago estimado, estado y
+  los botones **Aceptar / Rechazar**; los que no puedes aceptar explican por qué (reputación,
+  destino todavía cerrado, bodega llena o ya en curso). «Charlar» da frases de ambiente.
+- **Encargos (18):** alimentos 🐟 (prima del 25 % si llegan frescos, −20 % si tardan el doble),
+  herramientas 🧰 (sin condiciones) y pasajeros 🧳 (+20 % si el viaje es suave, −30 % con 3 o más
+  golpes fuertes; un golpe a más de 70 u/s cuenta como mucho una vez por segundo). Hay desbloqueo
+  progresivo: los de pasajeros piden 3 puntos de reputación con quien los ofrece y todos piden que
+  el destino ya esté abierto (descubierto) en el mapa.
+- **Bodega:** máximo 2 encargos activos a la vez. La pantalla muestra cada encargo con su cuenta
+  atrás de frescura o sus golpes, el rumbo y la distancia al muelle de entrega en la barra
+  superior, y el muelle de destino resaltado en el mundo y el minimapa.
+- **Entrega:** hay que **conducir hasta el muelle de destino y atracar** (frenando). Entonces sale la
+  pantalla de entrega con las palabras del receptor, la recompensa desglosada y la reputación
+  ganada. Atracar en cualquier otro muelle no entrega nada.
+- **Recompensas y reglas contra granjas:** la primera entrega de cada encargo paga el premio
+  completo; **repetirlo paga la mitad**. La reputación (por personaje, con tope de 40 puntos) da
+  primas: Conocido (3 puntos) +5 %, De confianza (8) +10 %, Aliado (15) +20 %. Una entrega da 2
+  puntos la primera vez y 1 las siguientes. El premio de cada entrega se cobra en un evento único del
+  historial: ni repetir el cierre ni un guardado antiguo pueden pagarlo dos veces. Los premios son
+  proporcionales a la distancia (≈ 1 moneda/s de viaje) y los pagos extra del viaje siguen topados
+  como en 2.6.
+- **Libreta de encargos** en Ajustes: entregas realizadas y reputación con cada personaje.
+
+**Guardado y compatibilidad.** El encargo activo (con su tiempo y sus golpes) se guarda con la
+posición de la lancha y se valida al abrir (plantilla conocida, sin duplicados y sin estar ya cobrado).
+Lo cumplido, la reputación y el número de entregas **se derivan del historial de monedas**: no hay
+otro almacenamiento que pueda desincronizarse. Las entregas usan el formato de historial **4**
+(se activa solo con la primera entrega; una versión anterior lo rechaza sin dañarlo, y el progreso
+de 2.3.1–2.6 se conserva tal cual), se compactan junto con el resto (reputación, entregas y los
+últimos 60 identificadores) y la copia manual pasa a `rio-aventura-progress-v5` (v1–v4 siguen
+aceptándose). El encargo en curso no va en la copia manual (solo el historial).
+
+**Rendimiento.** Los personajes son 6 sprites en caché, creados al entrar al mundo libre; solo se
+dibujan los muelles visibles (≤ 2 `drawImage` por muelle más la marca); el panel de diálogo es DOM y se
+abre con la partida detenida; la barra de encargos se actualiza a 4 Hz; no hay degradados, sprites ni
+objetos nuevos por fotograma (las pruebas lo vigilan). Medido en Chromium sin GPU (CPU 1× / 4× más
+lenta): p99 de 16,8 ms / 50 ms y 0 / 6 fotogramas de más de 50 ms en 20–25 s de navegación, igual o mejor
+que 2.6; no se ha medido en un teléfono físico.
+
+Pruebas: `node tests/visual-smoke.cjs` incluye `quests.cjs` (6: datos y reglas puras) y
+`quest-game.cjs` (21: hablar, aceptar, rechazar, bloqueos, destino correcto e incorrecto, entrega y
+cobro únicos, repetición y tope de reputación, pasajeros y comida, bodega, guardado y reanudación,
+guardados antiguos, fallo de guardado con reintento, historial falsificado, compactación, copia v5,
+datos de 2.6 intactos y presupuesto de dibujo). `node tests/e2e-quests.cjs [carpeta]` (opcional,
+Playwright; `RECORD_DIR` graba vídeo) hace el flujo completo en Chromium real: atracar en el puerto,
+hablar, aceptar, cerrar y reabrir la app, conducir hasta la aldea, atracar, cobrar una vez y comprobar
+la libreta, además de medir que los botones táctiles miden al menos 44 px. Capturas y vídeo en
+`docs/world-2.7/`.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
