@@ -57,7 +57,8 @@
   let economyError = false;
   const economy = readEconomy();
   let state = 'ready';
-  let boat, obstacles, particles, score, lives, elapsed, spawnIn, immunity, shieldTimer, direction, riverSpeed;
+  let boat, obstacles, collectibles, particles, score, lives, elapsed, spawnIn, coinSpawnIn, immunity, shieldTimer, direction, riverSpeed;
+  let collectedCoins = 0;
   let runDistance = 0;
   let stageIndex = 0;
   let stageHudTimer = 0;
@@ -163,7 +164,7 @@
   }
 
   function updateCoinHud() {
-    coinHud.textContent = economyError ? '🪙 !' : `🪙 ${replayEconomy(economy.events).coins}`;
+    coinHud.textContent = economyError ? '🪙 !' : `🪙 ${replayEconomy(economy.events).coins}${state === 'playing' ? ` · viaje +${collectedCoins * 3}` : ''}`;
   }
 
   function updateGarageView() {
@@ -292,8 +293,10 @@
   function reset() {
     boat = { x: width / 2, y: height - 150, vx: 0, tilt: 0, lean: 0 };
     obstacles = [];
+    collectibles = [];
     particles = [];
     score = 0;
+    collectedCoins = 0;
     runDistance = 0;
     if (stageIndex !== 0) waterGradient = null;
     stageIndex = 0;
@@ -303,6 +306,7 @@
     lives = 3;
     elapsed = 0;
     spawnIn = 0.6;
+    coinSpawnIn = 1.8;
     immunity = 0;
     shieldTimer = 0;
     direction = 0;
@@ -318,6 +322,7 @@
     measuredFps = null;
     updateHud();
     updateStageHud();
+    updateCoinHud();
   }
 
   function updateHud() {
@@ -335,6 +340,7 @@
   function begin() {
     reset();
     state = 'playing';
+    updateCoinHud();
     pause.textContent = 'Ⅱ';
     overlay.classList.add('hidden');
   }
@@ -352,10 +358,11 @@
     stats.dodged = Math.min(100000000, stats.dodged + score);
     stats.distance = Math.min(100000000, stats.distance + Math.round(runDistance));
     const savedStats = saveStats();
-    const earned = Math.max(1, Math.min(80, Math.floor(runDistance / 35) + score * 2));
+    const earned = Math.max(1, Math.min(80, Math.floor(runDistance / 35) + score * 2 + collectedCoins * 3));
     const savedCoins = saveEconomy(economyWithEvent({ type: 'earn', amount: earned }));
+    updateCoinHud();
     showOverlay('¡Fin del<br>viaje!',
-      `Lograste ${score} puntos y ${savedCoins ? earned : 0} monedas. Tu récord es ${best}.${savedBest && savedStats && savedCoins ? '' : ' No se pudo guardar todo el progreso.'}`,
+      `Lograste ${score} puntos, recogiste ${collectedCoins} monedas flotantes y ganaste ${savedCoins ? earned : 0} monedas en total. Tu récord es ${best}.${savedBest && savedStats && savedCoins ? '' : ' No se pudo guardar todo el progreso.'}`,
       'Jugar otra vez');
   }
 
@@ -366,6 +373,11 @@
     obstacles.push({ x: 78 + Math.random() * (width - 156), y: -40, radius, kind,
       vx: kind === 'drift' ? (Math.random() < 0.5 ? -1 : 1) * (52 + stageIndex * 10) : 0,
       counted: false, hit: false, phase: Math.random() * Math.PI * 2 });
+  }
+
+  function spawnCollectible() {
+    if (collectibles.length >= 4) return;
+    collectibles.push({ x: 90 + Math.random() * (width - 180), y: -25, phase: Math.random() * Math.PI * 2 });
   }
 
   function splash(x, y, count, color) {
@@ -441,6 +453,22 @@
       spawn();
       spawnIn = Math.max(0.44, 1.1 - elapsed * 0.012 - stageIndex * 0.065) + Math.random() * 0.28;
     }
+    coinSpawnIn -= dt;
+    if (coinSpawnIn <= 0) {
+      spawnCollectible();
+      coinSpawnIn = 2.6 + Math.random() * 1.1;
+    }
+    for (const coin of collectibles) {
+      coin.y += riverSpeed * dt;
+      const contactRadius = 16 * depthAt(coin.y) + 23 * depthAt(boat.y);
+      if (Math.hypot(projectedX(coin.x, coin.y) - projectedX(boat.x, boat.y), coin.y - boat.y) < contactRadius) {
+        coin.collected = true;
+        collectedCoins++;
+        splash(coin.x, coin.y, 9, '#ffdf85');
+        updateCoinHud();
+      }
+    }
+    collectibles = collectibles.filter(coin => !coin.collected && coin.y < height + 30);
     for (const item of obstacles) {
       item.y += riverSpeed * dt;
       if (item.kind === 'drift') {
@@ -662,6 +690,27 @@
     ctx.restore();
   }
 
+  function drawCollectibles() {
+    for (const coin of collectibles) {
+      ctx.save();
+      ctx.translate(projectedX(coin.x, coin.y), coin.y + Math.sin(elapsed * 5 + coin.phase) * 3);
+      ctx.scale(depthAt(coin.y), depthAt(coin.y));
+      ctx.fillStyle = '#17384588';
+      ctx.beginPath(); ctx.ellipse(4, 16, 20, 7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#fff2ae99';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(0, 12, 20, 8, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#a76f21';
+      ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffdf6b';
+      ctx.beginPath(); ctx.arc(0, -3, 13, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#fff2ae';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, -3, 8, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   function drawWake() {
     const x = projectedX(boat.x, boat.y);
     const turn = boat.vx / 285;
@@ -780,6 +829,7 @@
     if (impact > 0) ctx.translate((Math.random() - 0.5) * impact * 13, (Math.random() - 0.5) * impact * 13);
     drawRiver();
     drawWake();
+    drawCollectibles();
     // All obstacles move at the same speed; newest first is farthest away.
     let boatDrawn = false;
     for (let i = obstacles.length - 1; i >= 0; i--) {
