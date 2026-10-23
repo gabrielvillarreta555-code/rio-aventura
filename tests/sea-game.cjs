@@ -165,7 +165,7 @@ test('hay que frenar para atracar: a toda velocidad no se atraca', () => {
   const boat = game.api().seaBoat();
   boat.vx = 190;
   press(game, 'ArrowRight');
-  for (let i = 0; i < 30 && !game.api().seaHintText(); i++) game.tick(1, 16);
+  for (let i = 0; i < 40 && !/⚓/.test(game.api().seaHintText()); i++) game.tick(1, 16);
   assert(Math.hypot(boat.vx, boat.vy) > 115, 'va rápido');
   assert.equal(game.api().state(), 'playing', 'a toda velocidad no se atraca');
   assert.match(game.api().seaHintText(), /frena/i);

@@ -163,6 +163,7 @@
   let seaToastIn = 0;
   let dialogDock = '';
   let confirmAction = '';
+  let seaFishing = null;
   let dialogChat = 0;
   const questDeclined = new Set();
   let joyOrigin = { x: 0, y: 0 };
@@ -2010,7 +2011,10 @@
     if (!dock) {
       seaDockWait = 0;
       if (seaCooldown) seaCooldown = '';
-      setSeaHint('');
+      // Cerca de un muelle se avisa de quién espera, para que se vea que se puede hablar.
+      const near = sea.nearestDock(seaWorld, seaBoat);
+      const person = near && near.distance < 340 && !seaFishing ? quests.npc(near.dock.id) : null;
+      setSeaHint(person && seaDockStatus[near.dock.id] !== 'locked' ? `💬 ${person.name} · ${near.dock.name}: frena en el círculo para atracar y hablar` : '');
     } else if (dock.id !== seaCooldown) {
       const status = seaDockStatus[dock.id];
       if (status === 'locked') {

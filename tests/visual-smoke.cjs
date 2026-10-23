@@ -574,3 +574,4 @@ require('./sea-game.cjs');
 require('./quests.cjs');
 require('./quest-game.cjs');
 require('./pause.cjs');
+require('./npc-visible.cjs');

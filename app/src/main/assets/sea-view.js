@@ -13,6 +13,7 @@
   const MAX_CHUNKS = 30;
   const MAX_CHUNK_SCALE = 1.5; // la tierra es arte suave: no hace falta más resolución (ni memoria)
   const WIDTH = 450;
+  const NPC_SCALE = 1.25;
 
   // Colores de suelo por zona: hierba clara/oscura, arena, acantilado y un detalle decorativo.
   const GROUND = {
@@ -35,6 +36,7 @@
     const CHUNK = CHUNK_TILES * TILE;
     const chunksPerSide = Math.ceil(sea.N / CHUNK_TILES);
     const hash = window.RioArt.hash;
+    const radial = window.RioArt.helpers.radial;
 
     let height = 800;
     let scale = 1;
@@ -44,7 +46,7 @@
     let waterGradient = null;
     let patterns = [];
     let minimapBase = null;
-    const stats = { chunksBuilt: 0, chunkBuildMs: 0, drawnChunks: 0, items: 0, missing: 0 };
+    const stats = { npcs: 0, chunksBuilt: 0, chunkBuildMs: 0, drawnChunks: 0, items: 0, missing: 0 };
 
     function makeCanvas(w, h) {
       try {
@@ -63,6 +65,11 @@
     function nearPier(x, y) {
       for (const dock of world.docks) {
         if (Math.hypot(x - dock.x, y - dock.y) < 150) return true;
+        // Todo el embarcadero y el espacio donde está el personaje quedan despejados.
+        const p = dock.pier;
+        const cx = Math.max(p.x, Math.min(x, p.x + p.w));
+        const cy = Math.max(p.y, Math.min(y, p.y + p.h));
+        if (Math.hypot(x - cx, y - cy) < 110) return true;
       }
       return false;
     }
@@ -112,6 +119,7 @@
       for (const id in DOCK_HUTS) names.add(DOCK_HUTS[id]);
       for (const name of names) art.sprite(name);
       for (const dock of world.docks) labelFor(dock);
+      if (window.RioQuests) for (const person of window.RioQuests.npcs) labelFor({ id: `n-${person.id}`, name: person.name, sub: `${person.role} · ${world.docks.find(d => d.id === person.id).name}` });
       if (window.RioQuests) {
         for (const person of window.RioQuests.npcs) npcSprite(person);
         markSprite(1);
@@ -339,58 +347,132 @@
     }
 
     const labels = Object.create(null);
+    // Etiqueta de dos líneas (nombre y lugar): se pinta una vez en un lienzo oculto.
     function labelFor(dock) {
       if (labels[dock.id]) return labels[dock.id];
-      const w = 170;
-      const h = 26;
+      const w = 176;
+      const h = dock.sub ? 40 : 26;
       const element = makeCanvas(Math.ceil(w * 2), Math.ceil(h * 2));
-      const item = { canvas: element, w, h, ox: w / 2, oy: h, paint: g => paintLabel(g, dock.name, w, h) };
+      const item = { canvas: element, w, h, ox: w / 2, oy: h, paint: g => paintLabel(g, dock.name, dock.sub, w, h) };
       if (element) {
         const g = element.getContext('2d');
         g.scale(2, 2);
-        paintLabel(g, dock.name, w, h);
+        paintLabel(g, dock.name, dock.sub, w, h);
       }
       labels[dock.id] = item;
       return item;
     }
 
-    function paintLabel(g, text, w, h) {
+    function paintLabel(g, text, sub, w, h) {
       const x = g.canvas ? 0 : -w / 2;
       const y = g.canvas ? 0 : -h;
-      g.fillStyle = 'rgba(6,50,66,0.82)';
+      g.fillStyle = 'rgba(6,50,66,0.88)';
       g.beginPath(); g.moveTo(x + 12, y); g.lineTo(x + w - 12, y); g.quadraticCurveTo(x + w, y, x + w, y + 12);
       g.lineTo(x + w, y + h - 12); g.quadraticCurveTo(x + w, y + h, x + w - 12, y + h); g.lineTo(x + 12, y + h);
       g.quadraticCurveTo(x, y + h, x, y + h - 12); g.lineTo(x, y + 12); g.quadraticCurveTo(x, y, x + 12, y); g.fill();
-      g.strokeStyle = 'rgba(255,226,140,0.7)';
-      g.lineWidth = 1.2;
+      g.strokeStyle = 'rgba(255,226,140,0.8)';
+      g.lineWidth = 1.4;
       g.stroke();
       g.fillStyle = '#ffe58a';
-      g.font = '700 13px system-ui, sans-serif';
+      g.font = '800 14px system-ui, sans-serif';
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.fillText(text.length > 22 ? `${text.slice(0, 21)}…` : text, x + w / 2, y + h / 2 + 1);
+      const cut = (value, n) => (value.length > n ? `${value.slice(0, n - 1)}…` : value);
+      g.fillText(cut(text, 24), x + w / 2, y + (sub ? 14 : h / 2 + 1));
+      if (sub) {
+        g.fillStyle = '#bfeee8';
+        g.font = '700 11px system-ui, sans-serif';
+        g.fillText(cut(sub, 30), x + w / 2, y + 29);
+      }
     }
-
 
     // ---------- Personajes de los muelles ----------
     function paintNpc(g, npc) {
       const look = npc.look;
-      g.fillStyle = 'rgba(0,50,60,0.3)';
-      g.beginPath(); g.ellipse(0, 0, 15, 5, 0, 0, TAU); g.fill();
+      // Sombra, piernas y torso.
+      g.fillStyle = 'rgba(0,40,50,0.35)';
+      g.beginPath(); g.ellipse(0, 1, 19, 6, 0, 0, TAU); g.fill();
+      g.fillStyle = '#3a3048';
+      g.fillRect(-8, -16, 6.5, 16); g.fillRect(1.5, -16, 6.5, 16);
+      g.fillStyle = '#2a2230';
+      g.fillRect(-9, -2, 8.5, 3); g.fillRect(1, -2, 8.5, 3);
       g.fillStyle = look.shirt;
-      g.beginPath(); g.moveTo(-10, 0); g.lineTo(-8, -26); g.quadraticCurveTo(0, -31, 8, -26); g.lineTo(10, 0); g.closePath(); g.fill();
-      g.fillStyle = 'rgba(0,0,0,0.18)';
-      g.fillRect(-1, -26, 2, 26);
+      g.beginPath(); g.moveTo(-12, -14); g.lineTo(-10, -42); g.quadraticCurveTo(0, -48, 10, -42); g.lineTo(12, -14); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.22)';
+      g.beginPath(); g.moveTo(-10, -42); g.quadraticCurveTo(-3, -46, -1, -42); g.lineTo(-1, -16); g.lineTo(-11, -16); g.closePath(); g.fill();
+      g.fillStyle = '#5a3d22';
+      g.fillRect(-12, -22, 24, 3.5);
+      // Brazos: el izquierdo cuelga y el derecho sujeta el objeto que los distingue.
+      g.strokeStyle = look.shirt;
+      g.lineWidth = 6;
+      g.lineCap = 'round';
+      g.beginPath(); g.moveTo(-10, -40); g.lineTo(-17, -24); g.stroke();
+      g.beginPath(); g.moveTo(10, -40); g.lineTo(19, -30); g.stroke();
       g.fillStyle = look.skin;
-      g.beginPath(); g.arc(0, -35, 9, 0, TAU); g.fill();
+      g.beginPath(); g.arc(-17.5, -22, 3.6, 0, TAU); g.arc(20, -29, 3.6, 0, TAU); g.fill();
+      paintProp(g, look.prop);
+      // Cabeza, cara y sombrero.
+      g.fillStyle = look.skin;
+      g.beginPath(); g.arc(0, -53, 11.5, 0, TAU); g.fill();
       g.fillStyle = '#2b2018';
-      g.beginPath(); g.arc(-3.2, -35, 1.2, 0, TAU); g.arc(3.2, -35, 1.2, 0, TAU); g.fill();
+      g.beginPath(); g.arc(-4, -53, 1.6, 0, TAU); g.arc(4, -53, 1.6, 0, TAU); g.fill();
+      g.strokeStyle = '#a05a3a';
+      g.lineWidth = 1.6;
+      g.beginPath(); g.arc(0, -50, 4.5, 0.2, Math.PI - 0.2); g.stroke();
       g.fillStyle = look.hatColor;
-      if (look.hat === 'straw') { g.beginPath(); g.ellipse(0, -42, 15, 4, 0, 0, TAU); g.fill(); g.beginPath(); g.arc(0, -43, 8, Math.PI, 0); g.fill(); }
-      else if (look.hat === 'cap') { g.beginPath(); g.arc(0, -39, 9.5, Math.PI, 0); g.fill(); g.fillRect(-9, -40, 18, 3); g.fillStyle = '#1f4f8a'; g.fillRect(-4, -45, 8, 3); }
-      else if (look.hat === 'helmet') { g.beginPath(); g.arc(0, -39, 10, Math.PI, 0); g.fill(); g.fillRect(-11, -40, 22, 3); }
-      else if (look.hat === 'hood') { g.beginPath(); g.arc(0, -37, 11, Math.PI * 1.05, Math.PI * 1.95); g.lineTo(9, -30); g.lineTo(-9, -30); g.closePath(); g.globalAlpha = 0.9; g.fill(); g.globalAlpha = 1; }
-      else if (look.hat === 'explorer') { g.beginPath(); g.ellipse(0, -42, 14, 3.5, 0, 0, TAU); g.fill(); g.beginPath(); g.arc(0, -43, 7.5, Math.PI, 0); g.fill(); g.fillStyle = '#6a4a22'; g.fillRect(-7.5, -45, 15, 2); }
+      if (look.hat === 'straw') { g.beginPath(); g.ellipse(0, -60, 19, 5, 0, 0, TAU); g.fill(); g.beginPath(); g.arc(0, -61, 10.5, Math.PI, 0); g.fill(); g.fillStyle = '#c0402f'; g.fillRect(-10, -62, 20, 3); }
+      else if (look.hat === 'cap') { g.beginPath(); g.arc(0, -57, 12.5, Math.PI, 0); g.fill(); g.fillRect(-12.5, -58, 25, 3.5); g.fillStyle = '#1f4f8a'; g.fillRect(-5, -66, 10, 4); g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(0, -64, 2.2, 0, TAU); g.fill(); }
+      else if (look.hat === 'helmet') { g.beginPath(); g.arc(0, -57, 13, Math.PI, 0); g.fill(); g.fillRect(-14, -58, 28, 4); g.fillStyle = '#fff'; g.fillRect(-2.5, -70, 5, 7); }
+      else if (look.hat === 'hood') { g.beginPath(); g.arc(0, -55, 14, Math.PI * 1.02, Math.PI * 1.98); g.lineTo(11, -44); g.lineTo(-11, -44); g.closePath(); g.globalAlpha = 0.92; g.fill(); g.globalAlpha = 1; g.fillStyle = look.skin; g.beginPath(); g.arc(0, -52, 9, 0, TAU); g.fill(); g.fillStyle = '#2b2018'; g.beginPath(); g.arc(-3.5, -52, 1.5, 0, TAU); g.arc(3.5, -52, 1.5, 0, TAU); g.fill(); }
+      else if (look.hat === 'explorer') { g.beginPath(); g.ellipse(0, -60, 18, 4.5, 0, 0, TAU); g.fill(); g.beginPath(); g.arc(0, -61, 10, Math.PI, 0); g.fill(); g.fillStyle = '#6a4a22'; g.fillRect(-10, -62, 20, 3); }
+    }
+
+    // Objeto en la mano derecha: hace reconocible al personaje de un vistazo.
+    function paintProp(g, prop) {
+      g.save();
+      g.translate(20, -29);
+      g.lineCap = 'round';
+      if (prop === 'clipboard') {
+        g.fillStyle = '#8a5a30'; g.fillRect(-2, -22, 18, 24);
+        g.fillStyle = '#fffdf0'; g.fillRect(0, -19, 14, 19);
+        g.strokeStyle = '#7a8a95'; g.lineWidth = 1.2;
+        for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(2, -15 + i * 4); g.lineTo(12, -15 + i * 4); g.stroke(); }
+      } else if (prop === 'rod') {
+        g.strokeStyle = '#7a4a22'; g.lineWidth = 2.6;
+        g.beginPath(); g.moveTo(0, 2); g.lineTo(18, -52); g.stroke();
+        g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(18, -52); g.quadraticCurveTo(26, -34, 21, -16); g.stroke();
+        g.fillStyle = '#ff9a3a';
+        g.beginPath(); g.ellipse(21, -13, 6, 3, 0.4, 0, TAU); g.fill();
+        g.beginPath(); g.moveTo(26, -11); g.lineTo(31, -16); g.lineTo(31, -8); g.closePath(); g.fill();
+      } else if (prop === 'herbs') {
+        g.strokeStyle = '#6fbf5f'; g.lineWidth = 3;
+        for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(2, 0); g.quadraticCurveTo(2 + i * 4, -12, 3 + i * 6, -22); g.stroke(); }
+        g.fillStyle = '#ffdf6a';
+        for (let i = -2; i <= 2; i++) { g.beginPath(); g.arc(3 + i * 6, -23, 2.6, 0, TAU); g.fill(); }
+        g.fillStyle = '#a05a3a'; g.fillRect(-2, -3, 10, 4);
+      } else if (prop === 'wrench') {
+        g.strokeStyle = '#c8d0d8'; g.lineWidth = 4;
+        g.beginPath(); g.moveTo(2, 0); g.lineTo(12, -26); g.stroke();
+        g.fillStyle = '#c8d0d8';
+        g.beginPath(); g.arc(13, -29, 6, 0, TAU); g.fill();
+        g.fillStyle = '#7a8892'; g.beginPath(); g.arc(13, -31, 2.6, 0, TAU); g.fill();
+      } else if (prop === 'lens') {
+        g.strokeStyle = '#7a4a22'; g.lineWidth = 3;
+        g.beginPath(); g.moveTo(1, 0); g.lineTo(9, -16); g.stroke();
+        g.strokeStyle = '#d9b24a'; g.lineWidth = 3;
+        g.beginPath(); g.arc(14, -24, 8, 0, TAU); g.stroke();
+        g.fillStyle = 'rgba(190,235,255,0.55)'; g.beginPath(); g.arc(14, -24, 6.5, 0, TAU); g.fill();
+      } else if (prop === 'lantern') {
+        g.fillStyle = radial(g, 8, -14, 1, 8, -14, 26, [0, 'rgba(255,240,150,0.9)', 1, 'rgba(255,220,120,0)']);
+        g.beginPath(); g.arc(8, -14, 26, 0, TAU); g.fill();
+        g.strokeStyle = '#6a5a8a'; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(8, -34); g.lineTo(8, -26); g.stroke();
+        g.fillStyle = '#4a3a6a'; g.fillRect(1, -27, 14, 3);
+        g.fillStyle = '#ffe98a'; g.fillRect(2, -24, 12, 14);
+        g.fillStyle = '#4a3a6a'; g.fillRect(1, -11, 14, 3);
+      }
+      g.restore();
     }
 
     function paintMark(g, kind) {
@@ -406,17 +488,39 @@
     }
 
     const npcSprites = Object.create(null);
+    // Sprite 96 × 110 con contorno blanco (se construye una vez): se distingue sobre el agua, la madera y la hierba.
     function npcSprite(npc) {
       if (npcSprites[npc.id]) return npcSprites[npc.id];
-      const w = 56;
-      const h = 66;
-      const element = makeCanvas(Math.ceil(w * 2), Math.ceil(h * 2));
-      const item = { canvas: element, w, h, ox: w / 2, oy: h - 8, paint: g => paintNpc(g, npc) };
+      const w = 96;
+      const h = 110;
+      const k = 3;
+      const ox = w / 2;
+      const oy = h - 12;
+      const element = makeCanvas(w * k, h * k);
+      const item = { canvas: element, w, h, ox, oy, paint: g => paintNpc(g, npc) };
       if (element) {
         const g = element.getContext('2d');
-        g.scale(2, 2);
-        g.translate(w / 2, h - 8);
-        paintNpc(g, npc);
+        const plain = makeCanvas(w * k, h * k);
+        if (plain) {
+          const pg = plain.getContext('2d');
+          pg.scale(k, k);
+          pg.translate(ox, oy);
+          paintNpc(pg, npc);
+          // Contorno: la silueta en blanco desplazada en ocho direcciones, y encima el dibujo.
+          const ring = makeCanvas(w * k, h * k);
+          const rg = ring.getContext('2d');
+          const r = 2.6 * k;
+          for (let i = 0; i < 8; i++) rg.drawImage(plain, Math.cos(i * Math.PI / 4) * r, Math.sin(i * Math.PI / 4) * r);
+          rg.globalCompositeOperation = 'source-in';
+          rg.fillStyle = '#ffffff';
+          rg.fillRect(0, 0, w * k, h * k);
+          g.drawImage(ring, 0, 0);
+          g.drawImage(plain, 0, 0);
+        } else {
+          g.scale(k, k);
+          g.translate(ox, oy);
+          paintNpc(g, npc);
+        }
       }
       return (npcSprites[npc.id] = item);
     }
@@ -473,12 +577,19 @@
       const bx = (dock.dir === 'W' ? p.x : dock.dir === 'E' ? p.x + p.w : p.x + p.w / 2) + dx * 44 - cam.x;
       const by = (dock.dir === 'N' ? p.y : dock.dir === 'S' ? p.y + p.h : p.y + p.h / 2) + dy * 44 - cam.y + 14;
       blit(art.sprite(DOCK_HUTS[dock.id]), bx, by, 0.62, 0.62, status === 'locked' ? 0.7 : 1);
-      blit(labelFor(dock), bx, by - 78, 1, 1, status === 'locked' ? 0.75 : 1);
       const person = window.RioQuests && window.RioQuests.npc(dock.id);
+      if (!person) blit(labelFor(dock), bx, by - 78, 1, 1, status === 'locked' ? 0.75 : 1);
       if (person) {
-        blit(npcSprite(person), bx + 38, by + 10, 1, 1, status === 'locked' ? 0.75 : 1);
+        // El personaje está de pie sobre el embarcadero, grande y con contorno, y su nombre flota encima.
+        const toLand = { N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0] }[dock.dir];
+        const nx = p.x + p.w / 2 + toLand[0] * 10 - cam.x;
+        const ny = p.y + p.h / 2 + toLand[1] * 10 - cam.y + 12;
+        const dim = status === 'locked' ? 0.8 : 1;
+        blit(npcSprite(person), nx, ny, NPC_SCALE, NPC_SCALE, dim);
+        stats.npcs++;
+        blit(labelFor({ id: `n-${person.id}`, name: person.name, sub: `${person.role} · ${dock.name}` }), nx, ny - 64 * NPC_SCALE - 4, 1, 1, dim);
         const mark = f.dockMark ? f.dockMark[dock.id] : 0;
-        if (mark) blit(markSprite(mark), bx + 38, by - 60 + Math.sin(time * 4 + bx) * 3, 1, 1, 1);
+        if (mark) blit(markSprite(mark), nx, ny - 64 * NPC_SCALE - 50 + Math.sin(time * 4 + nx) * 3, 1.5, 1.5, 1);
       }
       if (status === 'visited') {
         ctx.fillStyle = '#ffe58a';
@@ -561,6 +672,7 @@
     function draw(f) {
       const cam = f.cam;
       stats.items = 0;
+      stats.npcs = 0;
       ensureChunks(cam, { visible: stats.missing > 3 ? 6 : 3, ring: 1 });
       drawWater(cam);
       drawWake(f, cam);
@@ -716,7 +828,14 @@
 
     resize(height, scale);
 
-    return { resize, setDetail, update, draw, prewarm, warm, drawMinimap, stats, chunkCount: () => chunks.size,
+    // Para pruebas: decoración cercana a un punto (nada debe tapar a los personajes).
+    function propsNear(x, y, radius) {
+      const found = [];
+      for (const list of propsByChunk.values()) for (const p of list) if (Math.hypot(p.x - x, p.y - y) < radius) found.push(p);
+      return found;
+    }
+
+    return { npcScale: NPC_SCALE, propsNear, resize, setDetail, update, draw, prewarm, warm, drawMinimap, stats, chunkCount: () => chunks.size,
       hasChunk: (cx, cy) => chunks.has(chunkKey(cx, cy)), CHUNK, propCount: () => [...propsByChunk.values()].reduce((a, l) => a + l.length, 0) };
   }
 
