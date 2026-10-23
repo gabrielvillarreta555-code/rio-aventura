@@ -15,6 +15,13 @@
     #hud span { padding: 8px 12px; border-radius: 16px; background: #0d3749aa; }
     #hudActions { display: flex; gap: 8px; pointer-events: auto; }
     #hudActions button { border: 0; width: 42px; height: 42px; border-radius: 14px; background: #0d3749cc; color: white; font-size: 20px; }
+    #stageHud { position: absolute; top: calc(max(18px, env(safe-area-inset-top)) + 52px); left: 16px; right: 16px; padding: 8px 12px; border-radius: 14px; background: #0d3749b8; pointer-events: none; text-shadow: 0 2px 8px #153a49; }
+    #stageHudText { display: flex; justify-content: space-between; gap: 8px; font: 700 12px system-ui, sans-serif; }
+    #stageDistance { white-space: nowrap; color: #ffdf85; }
+    #stageTrack { margin-top: 6px; height: 5px; border-radius: 9px; background: #ffffff44; overflow: hidden; }
+    #stageProgress { width: 0; height: 100%; background: #ffdf85; transition: width .2s linear; }
+    #stageToast { position: absolute; top: 23%; left: 8%; right: 8%; padding: 13px; border-radius: 16px; background: #103e4bdc; color: #ffdf85; text-align: center; font-weight: 800; font-size: 19px; pointer-events: none; text-shadow: 0 2px 8px #153a49; }
+    #stageToast.hidden { display: none; }
     #overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 26px; background: linear-gradient(#0b2837cb, #0b2837ed); }
     #overlay.hidden { display: none; }
     #overlay h1 { margin: 0; font-size: clamp(38px, 10vw, 58px); line-height: 1; }
@@ -48,7 +55,7 @@
     .backupActions button { min-height: 44px; padding: 10px 14px; border: 1px solid #b2e5df88; border-radius: 12px; background: #0b4b58; color: white; font: 700 14px system-ui, sans-serif; }
     #backupNotice { min-height: 20px; margin-top: 8px; color: #c7f7db; font-size: 13px; }
     .googleNote { margin-top: 20px; padding: 12px; border: 1px solid #a5e7df44; border-radius: 14px; }
-    @media (max-width: 380px) { #hud { left: 8px; right: 8px; gap: 4px; } #hud span { padding: 7px; font-size: 13px; } #hudActions { gap: 4px; } #hudActions button { width: 38px; height: 38px; } }
+    @media (max-width: 380px) { #hud { left: 8px; right: 8px; gap: 4px; } #hud span { padding: 7px; font-size: 13px; } #hudActions { gap: 4px; } #hudActions button { width: 38px; height: 38px; } #stageHud { left: 8px; right: 8px; } #stageHudText { font-size: 11px; } }
     #hint { position: absolute; bottom: max(24px, env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 14px; font-weight: 700; color: #efffff; text-shadow: 0 2px 8px #153a49; pointer-events: none; }
   </style>
 </head>
@@ -56,6 +63,8 @@
   <main id="stage" aria-label="Juego Río Aventura">
     <canvas id="game" width="450" height="800"></canvas>
     <div id="hud"><span id="score">0 puntos</span><span id="lives">♥ ♥ ♥</span><div id="hudActions"><button id="settings" type="button" aria-label="Abrir ajustes">⚙</button><button id="pause" type="button" aria-label="Pausar">Ⅱ</button></div></div>
+    <div id="stageHud" aria-live="off"><div id="stageHudText"><span id="stageLabel">Tramo 1 · Orillas tranquilas</span><span id="stageDistance">0 / 100 m</span></div><div id="stageTrack"><div id="stageProgress"></div></div></div>
+    <div id="stageToast" class="hidden" role="status" aria-live="polite"></div>
     <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><p id="message">Esquiva las rocas y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="play" type="button">¡Jugar!</button><button id="openingSettings" type="button">Ajustes</button></div>
     <section id="settingsPanel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
       <div class="settingsCard">
