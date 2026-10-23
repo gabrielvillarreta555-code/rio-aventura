@@ -1110,10 +1110,11 @@
         const e0 = edgeX(side, 0);
         const e1 = edgeX(side, height);
         ctx.fillStyle = pal.shallow;
-        ctx.globalAlpha = 0.34;
+        ctx.globalAlpha = detail === 0 ? 0.4 : 0.34;
         ctx.beginPath();
-        ctx.moveTo(e0, 0); ctx.lineTo(e0 + dir * 30 * d0, 0); ctx.lineTo(e1 + dir * 30 * d1, height); ctx.lineTo(e1, height);
+        ctx.moveTo(e0, 0); ctx.lineTo(e0 + dir * (detail === 0 ? 22 : 30) * d0, 0); ctx.lineTo(e1 + dir * (detail === 0 ? 22 : 30) * d1, height); ctx.lineTo(e1, height);
         ctx.closePath(); ctx.fill();
+        if (detail === 0) continue;
         ctx.globalAlpha = 0.30;
         ctx.beginPath();
         ctx.moveTo(e0, 0); ctx.lineTo(e0 + dir * 13 * d0, 0); ctx.lineTo(e1 + dir * 13 * d1, height); ctx.lineTo(e1, height);
@@ -1204,7 +1205,7 @@
       const shift = snap(cameraX);
       ctx.save();
       ctx.translate(-shift, scroll);
-      ctx.fillStyle = grassPattern || '#2f9a52';
+      ctx.fillStyle = detail >= 1 && grassPattern ? grassPattern : '#2f9a52';
       ctx.beginPath();
       ctx.moveTo(-12 + shift, -scroll); ctx.lineTo(l0 + shift, -scroll); ctx.lineTo(l1 + shift, height - scroll); ctx.lineTo(-12 + shift, height - scroll);
       ctx.closePath();
@@ -1307,7 +1308,7 @@
       if (item.kind === 'rock') {
         const k = d * item.radius / 22;
         const variant = Math.floor(item.phase / (TAU / 3)) % 3;
-        putFlat(S('wakeTail'), x, y + 6 * k, k * 1.1, k * 1.15, 0.5 + 0.2 * Math.sin(time * 5 + item.phase));
+        if (detail >= 1) putFlat(S('wakeTail'), x, y + 6 * k, k * 1.1, k * 1.15, 0.5 + 0.2 * Math.sin(time * 5 + item.phase));
         ctx.strokeStyle = '#f2ffff';
         ctx.lineWidth = 2.2 * d;
         ctx.globalAlpha = 0.55 + 0.25 * Math.sin(time * 4 + item.phase);
@@ -1319,7 +1320,7 @@
       } else {
         const rotation = Math.sin(time * 2 + item.phase) * 0.1 + 0.18;
         const flip = item.vx < 0 ? -1 : 1;
-        putFlat(S('wakeTail'), x - 2 * d, y + 14 * d, d * 1.25, d * 1.1, 0.45 + 0.2 * Math.sin(time * 5 + item.phase));
+        if (detail >= 1) putFlat(S('wakeTail'), x - 2 * d, y + 14 * d, d * 1.25, d * 1.1, 0.45 + 0.2 * Math.sin(time * 5 + item.phase));
         const log = S(item.kind === 'drift' ? 'log1' : 'log0');
         put(log, x, y, d, d, rotation, 1);
         if (item.kind === 'drift') put(S('driftMark'), x + flip * 12 * d, y + 1 * d, d * flip, d, rotation, 1);
@@ -1467,9 +1468,41 @@
 
     const petalNames = ['petal0', 'petal1', 'petal2'];
 
-    // Pétalos y hojas que flotan por la escena (solo en el nivel de detalle máximo).
-    function drawAmbient() {
+    // Líneas de velocidad en la corriente rápida: un solo trazo con ocho rayas.
+    function drawSpeedLines(speed) {
+      const amount = clamp((speed - 250) / 140, 0, 1);
+      if (amount <= 0) return;
+      ctx.strokeStyle = '#ffffff';
+      ctx.globalAlpha = 0.32 * amount;
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const y = ((time * (420 + hash(i, 600) * 260) + hash(i, 601) * height) % (height + 140)) - 70;
+        const d = depthAt(y);
+        const x = projectX(WIDTH / 2 + (hash(i, 602) - 0.5) * 250, y);
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, y + (36 + hash(i, 603) * 50) * d);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // Pétalos y hojas que flotan por la escena y, al atardecer, luciérnagas (nivel máximo).
+    function drawAmbient(scene) {
       if (detail < 2) return;
+      drawSpeedLines(scene.riverSpeed);
+      if (stageTo === 3) {
+        ctx.globalCompositeOperation = 'lighter';
+        const glow = S('glow');
+        for (let i = 0; i < 9; i++) {
+          const x = WIDTH * (0.12 + 0.76 * hash(i, 610)) + Math.sin(time * 0.7 + i * 2.3) * 26;
+          const y = height * (0.25 + 0.6 * hash(i, 611)) + Math.cos(time * 0.9 + i * 1.7) * 22;
+          const blink = 0.5 + 0.5 * Math.sin(time * 2.6 + i * 3.1);
+          putFlat(glow, x, y, 0.28 * (0.6 + blink * 0.5), 0.28 * (0.6 + blink * 0.5), 0.35 + 0.65 * blink);
+        }
+        ctx.globalCompositeOperation = 'source-over';
+      }
       for (let i = 0; i < 6; i++) {
         const speed = 22 + hash(i, 500) * 22;
         const y = ((time * speed + hash(i, 501) * (height + 60)) % (height + 60)) - 30;
@@ -1519,6 +1552,10 @@
     }
 
     function drawLighting(pal, scene) {
+      if (detail === 0) {
+        if (scene.impact > 0) drawImpact(scene);
+        return;
+      }
       const fogA = S(fogNames[stageTo]);
       if (stageMix < 1) {
         putFlat(S(fogNames[stageFrom]), 0, 0, WIDTH / 8, height * 0.3 / 64, 1 - stageMix);
@@ -1545,12 +1582,14 @@
         ctx.fillRect(0, 0, WIDTH, height);
         ctx.globalAlpha = 1;
       }
-      if (scene.impact > 0) {
-        ctx.fillStyle = '#ffe2d0';
-        ctx.globalAlpha = Math.min(0.32, scene.impact * 0.26);
-        ctx.fillRect(0, 0, WIDTH, height);
-        ctx.globalAlpha = 1;
-      }
+      if (scene.impact > 0) drawImpact(scene);
+    }
+
+    function drawImpact(scene) {
+      ctx.fillStyle = '#ffe2d0';
+      ctx.globalAlpha = Math.min(0.32, scene.impact * 0.26);
+      ctx.fillRect(0, 0, WIDTH, height);
+      ctx.globalAlpha = 1;
     }
 
     // Solo para medir: fuerza el vaciado del lienzo y acumula el tiempo de cada pasada.
@@ -1604,7 +1643,7 @@
         drawBoat(scene);
       }
       if (probe) mark('objects');
-      drawAmbient();
+      drawAmbient(scene);
       drawEffects();
       ctx.restore();
       ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);

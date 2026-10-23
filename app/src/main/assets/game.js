@@ -1142,17 +1142,24 @@
     gfxEma += (interval - gfxEma) * 0.08;
     gfxRefresh = Math.max(6, Math.min(gfxRefresh, interval));
     gfxClock += interval;
-    if (gfxClock < 2000) return;
+    if (gfxClock < 1500) return;
     gfxClock = 0;
-    const slow = gfxEma > Math.max(gfxRefresh * 1.3, 20);
+    const budget = Math.max(gfxRefresh, 16.7);
+    const slow = gfxEma > Math.max(budget * 1.3, 20);
+    const severe = gfxEma > budget * 2.2;
     const smooth = gfxEma < gfxRefresh * 1.15;
     gfxBad = slow ? gfxBad + 1 : 0;
     gfxGood = smooth && !slow ? gfxGood + 1 : 0;
     if (gfxProbe > 0) gfxProbe--;
-    if (gfxBad >= 2 && gfxTier > 0) {
-      if (gfxProbe > 0) gfxCeiling = Math.min(gfxCeiling, gfxTier - 1);
+    if (gfxProbe > 0 && !smooth && gfxTier > 0) {
+      // Una subida a prueba solo se mantiene si el teléfono sigue yendo holgado.
+      gfxCeiling = Math.min(gfxCeiling, gfxTier - 1);
+      gfxProbe = 0;
       setGraphicsTier(gfxTier - 1);
-    } else if (gfxGood >= 5 && gfxTier < gfxCeiling) {
+    } else if ((gfxBad >= 2 || (severe && gfxBad >= 1)) && gfxTier > 0) {
+      if (gfxProbe > 0) gfxCeiling = Math.min(gfxCeiling, gfxTier - 1);
+      setGraphicsTier(gfxTier - (severe ? 2 : 1));
+    } else if (gfxGood >= 6 && gfxTier < gfxCeiling) {
       gfxProbe = 3;
       setGraphicsTier(gfxTier + 1);
     }

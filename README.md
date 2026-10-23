@@ -153,16 +153,17 @@ hunde en el agua, ola de proa y estela de espuma; las rocas tienen musgo y espum
 los troncos corteza, ramas y anillos, y los troncos a la deriva una flecha
 amarilla; las monedas giran con brillo. Cada tramo tiene su luz (mañana,
 mediodía, tarde dorada y atardecer) con un fundido suave al cambiar, y hay
-destellos al recoger monedas, ondas al chocar, un escudo luminoso y pétalos
-flotando. El HUD usa paneles de cristal, corazones rosas, una barra de tramo
+destellos al recoger monedas, ondas al chocar, un escudo luminoso, pétalos
+flotando, líneas de velocidad en la corriente rápida y luciérnagas al atardecer. El HUD usa paneles de cristal, corazones rosas, una barra de tramo
 dorada y una pantalla de título con el juego visible de fondo.
 
 Rendimiento en Android: los elementos se dibujan una vez en lienzos ocultos y se
 copian después; no se crean degradados ni objetos por fotograma; el agua se dibuja
 sin recortes costosos y los patrones se alinean a píxeles. La calidad gráfica es
 automática: mide el tiempo real entre fotogramas y sube o baja una escalera de
-siete niveles (detalle y resolución), recuerda el último nivel estable y deja de
-intentar subir si el teléfono no lo aguanta. La calidad reducida de Ajustes fija
+siete niveles (detalle y resolución): baja enseguida si el teléfono se atasca,
+sube despacio y a prueba, recuerda el último nivel estable y deja de intentar
+subir si el teléfono no lo aguanta. La calidad reducida de Ajustes fija
 el nivel mínimo (hasta 30 FPS). En una prueba de laboratorio con un navegador sin
 GPU, la calidad alta iguala a la de 2.3.1 (60 FPS) y la reducida es más rápida;
 no se ha medido en un teléfono físico. Ajustes muestra el nivel gráfico actual.
