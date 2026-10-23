@@ -5,10 +5,19 @@ const vm = require('node:vm');
 const events = new Map();
 const operations = [];
 const translations = [];
+let fullCanvasFills = 0;
+let waterGradientCreates = 0;
 const gradient = { addColorStop() {} };
 const context = new Proxy({
-  createLinearGradient: () => gradient,
+  createLinearGradient(x0, y0, x1, y1) {
+    if (x0 === 0 && y0 === 0 && x1 === canvas.width && y1 === canvas.height) waterGradientCreates++;
+    return gradient;
+  },
   createRadialGradient: () => gradient,
+  fillRect(x, y, width, height) {
+    if (x === 0 && y === 0 && width === canvas.width && height === canvas.height) fullCanvasFills++;
+    operations.push('fillRect');
+  },
   translate(x, y) {
     assert(Number.isFinite(x) && Number.isFinite(y), 'translate received a non-finite value');
     translations.push([x, y]);
@@ -45,7 +54,8 @@ const canvas = element('game');
 canvas.width = 450;
 canvas.height = 800;
 canvas.getContext = () => context;
-canvas.getBoundingClientRect = () => ({ width: 450, height: 1000, left: 0 });
+let stageHeight = 1000;
+canvas.getBoundingClientRect = () => ({ width: 450, height: stageHeight, left: 0 });
 canvas.setPointerCapture = () => {};
 const elements = new Map([['game', canvas]]);
 let nextFrame;
@@ -102,12 +112,14 @@ assert(operations.includes('translate'), 'the boat and obstacles must be drawn')
 assert(operations.includes('clip'), 'the perspective river must clip water to its banks');
 assert(operations.filter(name => name === 'bezierCurveTo').length > 5, 'moving water shimmer should be drawn');
 assert(operations.filter(name => name === 'arc').length > 20, 'layered riverside trees should be drawn');
+assert.equal(waterGradientCreates, 1, 'the water gradient should be reused between frames');
 const html = fs.readFileSync('app/src/main/assets/index.html', 'utf8');
-for (const id of ['settings', 'openingSettings', 'settingsPanel', 'profileName', 'avatar', 'quality', 'bestScore', 'totalRuns', 'totalDodged', 'legacyDodged', 'playerTag', 'backupText', 'exportProgress', 'importProgress']) {
+for (const id of ['settings', 'openingSettings', 'settingsPanel', 'profileName', 'avatar', 'quality', 'performanceInfo', 'bestScore', 'totalRuns', 'totalDodged', 'legacyDodged', 'playerTag', 'backupText', 'exportProgress', 'importProgress']) {
   assert(html.includes(`id="${id}"`), `the settings screen needs ${id}`);
 }
 events.get('settings:click')();
 assert(!elements.get('settingsPanel').classList.contains('hidden'), 'settings should open');
+assert(/FPS dibujados/.test(elements.get('performanceInfo').textContent), 'settings should show a gameplay FPS sample');
 assert.equal(elements.get('profileName').value, 'Invitado', 'a new player starts as a guest');
 assert.equal(elements.get('bestScore').textContent, '42', 'the existing record should remain visible');
 elements.get('profileName').value = 'Gabriel';
@@ -121,14 +133,27 @@ events.get('quality:change')();
 assert.equal(JSON.parse(storage.get('rio-aventura-profile-v1')).quality, 'low', 'quality choice should persist');
 operations.length = 0;
 nextFrame(2512);
+nextFrame(2544);
+assert(operations.includes('fillRect'), 'reduced quality should still draw the game');
 assert(!operations.includes('bezierCurveTo'), 'reduced quality should omit water shimmer');
 events.get('closeSettings:click')();
 assert(elements.get('settingsPanel').classList.contains('hidden'), 'settings should close');
 assert.equal(elements.get('pause').textContent, 'Ⅱ', 'closing settings should resume play');
 events.get('game:pointerdown')({ pointerId: 3, clientX: 350 });
-for (let time = 2528; time <= 4500; time += 16) nextFrame(time);
+for (let time = 2560; time <= 4500; time += 16) nextFrame(time);
 events.get('game:pointerup')({ pointerId: 3 });
-for (let time = 4550; time <= 7000; time += 50) nextFrame(time);
+let foregroundOrderSeen = false;
+for (let time = 4550; time <= 7000; time += 50) {
+  translations.length = 0;
+  nextFrame(time);
+  const boatIndex = translations.findIndex(([x, y]) => x > 315 && x < 370 && y > 840 && y < 860);
+  const obstacleIndex = translations.findIndex(([x, y]) => x > 175 && x < 230 && y > 880 && y < 1000);
+  if (boatIndex >= 0 && obstacleIndex >= 0) {
+    assert(boatIndex < obstacleIndex, 'a foreground obstacle should be drawn over the boat');
+    foregroundOrderSeen = true;
+  }
+}
+assert(foregroundOrderSeen, 'the test should observe a foreground obstacle');
 assert(Number.parseInt(elements.get('score').textContent, 10) > 0, 'a safely passed obstacle should score');
 events.get('play:click')();
 for (let time = 7050; time < 40000 && !storage.has('rio-aventura-stats-v2'); time += 50) nextFrame(time);
@@ -184,4 +209,31 @@ events.get('openingSettings:click')();
 assert.equal(elements.get('totalRuns').textContent, '5', 'legacy trip count should migrate');
 assert.equal(elements.get('totalDodged').textContent, '0', 'old points must not be presented as verified dodges');
 assert.equal(elements.get('legacyDodged').textContent, '17', 'old estimated points should remain visible');
+elements.get('quality').value = 'high';
+events.get('quality:change')();
+events.get('closeSettings:click')();
+fullCanvasFills = 0;
+for (let time = 100000; time < 100960; time += 16) nextFrame(time);
+const highQualityFills = fullCanvasFills;
+assert(highQualityFills > 100, 'high quality should render nearly every display frame');
+const gradientsBeforeResize = waterGradientCreates;
+events.get('openingSettings:click')();
+elements.get('quality').value = 'low';
+events.get('quality:change')();
+events.get('closeSettings:click')();
+fullCanvasFills = 0;
+for (let time = 101000; time < 101960; time += 16) nextFrame(time);
+assert(fullCanvasFills < highQualityFills * 0.7, 'reduced quality should draw substantially fewer frames');
+assert.equal(waterGradientCreates, gradientsBeforeResize, 'water gradient should remain cached');
+stageHeight = 1100;
+events.get('window:resize')();
+nextFrame(102000);
+assert.equal(waterGradientCreates, gradientsBeforeResize + 1, 'resizing should rebuild the water gradient');
+fullCanvasFills = 0;
+for (let time = 103000; time < 104000; time += 1000 / 30) nextFrame(time);
+assert(fullCanvasFills >= 58, 'reduced quality should not halve an actual 30 Hz display');
+sandbox.document.hidden = true;
+fullCanvasFills = 0;
+nextFrame(104050);
+assert.equal(fullCanvasFills, 0, 'hidden pages should not redraw the canvas');
 console.log('Visual smoke test passed');
