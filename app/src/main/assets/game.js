@@ -23,6 +23,7 @@
   const exportProgressButton = document.getElementById('exportProgress');
   const importProgressButton = document.getElementById('importProgress');
   const backupNotice = document.getElementById('backupNotice');
+  const performanceInfo = document.getElementById('performanceInfo');
   const width = canvas.width;
   let height = canvas.height;
   const bestKey = 'rio-aventura-best-v1';
@@ -41,6 +42,11 @@
   let impact = 0;
   let cameraX = 0;
   let lastFrame = 0;
+  let lastRender = -Infinity;
+  let waterGradient = null;
+  let fpsWindowStart = 0;
+  let fpsFrames = 0;
+  let measuredFps = null;
   let activePointerId = null;
   const heldKeys = { left: false, right: false };
 
@@ -130,6 +136,9 @@
     document.getElementById('totalDodged').textContent = String(stats.dodged);
     document.getElementById('legacyDodged').textContent = String(stats.legacyDodged);
     document.getElementById('totalDistance').textContent = `${stats.distance} m`;
+    performanceInfo.textContent = measuredFps === null
+      ? 'FPS: juega unos segundos para medirlos.'
+      : `Última medición: ${measuredFps} FPS dibujados.`;
   }
 
   function updateProfileBadge() {
@@ -145,6 +154,7 @@
     const difference = nextHeight - height;
     canvas.height = nextHeight;
     height = nextHeight;
+    waterGradient = null;
     if (boat) boat.y += difference;
     if (obstacles) obstacles.forEach(item => { item.y += difference; });
   }
@@ -175,6 +185,9 @@
     wakeTimer = 0;
     impact = 0;
     cameraX = 0;
+    fpsWindowStart = 0;
+    fpsFrames = 0;
+    measuredFps = null;
     updateHud();
   }
 
@@ -332,11 +345,13 @@
     ctx.lineTo(riverEdge(0, height), height);
     ctx.closePath();
     ctx.clip();
-    const water = ctx.createLinearGradient(0, 0, width, height);
-    water.addColorStop(0, '#18566c');
-    water.addColorStop(0.47, '#2a9caa');
-    water.addColorStop(1, '#64c8c2');
-    ctx.fillStyle = water;
+    if (!waterGradient) {
+      waterGradient = ctx.createLinearGradient(0, 0, width, height);
+      waterGradient.addColorStop(0, '#18566c');
+      waterGradient.addColorStop(0.47, '#2a9caa');
+      waterGradient.addColorStop(1, '#64c8c2');
+    }
+    ctx.fillStyle = waterGradient;
     ctx.fillRect(0, 0, width, height);
     if (profile.quality === 'high') {
       const shimmer = (elapsed * 82) % 190;
@@ -583,9 +598,17 @@
     if (impact > 0) ctx.translate((Math.random() - 0.5) * impact * 13, (Math.random() - 0.5) * impact * 13);
     drawRiver();
     drawWake();
-    [...obstacles].sort((a, b) => a.y - b.y).forEach(drawObstacle);
-    drawParticles();
-    drawBoat();
+    // All obstacles move at the same speed; newest first is farthest away.
+    let boatDrawn = false;
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+      if (!boatDrawn && obstacles[i].y > boat.y) {
+        drawParticles();
+        drawBoat();
+        boatDrawn = true;
+      }
+      drawObstacle(obstacles[i]);
+    }
+    if (!boatDrawn) { drawParticles(); drawBoat(); }
     ctx.restore();
     if (impact > 0) {
       ctx.fillStyle = `rgba(255,255,255,${impact * 0.23})`;
@@ -597,7 +620,19 @@
     const dt = Math.min(0.05, (now - lastFrame) / 1000 || 0);
     lastFrame = now;
     step(dt);
-    render();
+    if (!document.hidden && (profile.quality === 'high' || now - lastRender >= 1000 / 30 - 1)) {
+      render();
+      lastRender = now;
+      if (state === 'playing') {
+        if (fpsWindowStart === 0) fpsWindowStart = now;
+        fpsFrames++;
+        if (now - fpsWindowStart >= 1000) {
+          measuredFps = Math.round(fpsFrames * 1000 / (now - fpsWindowStart));
+          fpsWindowStart = now;
+          fpsFrames = 0;
+        }
+      } else { fpsWindowStart = 0; fpsFrames = 0; }
+    } else if (document.hidden) { fpsWindowStart = 0; fpsFrames = 0; }
     requestAnimationFrame(frame);
   }
 
