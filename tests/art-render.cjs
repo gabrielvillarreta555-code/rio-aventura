@@ -55,7 +55,8 @@ function launch({ store = makeStore(), pixelRatio, sprites = true, quality } = {
     return {
       id, textContent: '', value: '', style: {}, attributes: {},
       setAttribute(name, value) { this.attributes[name] = value; }, select() {},
-      classList: { add: n => classes.add(n), remove: n => classes.delete(n), contains: n => classes.has(n) },
+      classList: { add: n => classes.add(n), remove: n => classes.delete(n), contains: n => classes.has(n),
+        toggle: (n, force) => { if (force === undefined ? !classes.has(n) : force) classes.add(n); else classes.delete(n); } },
       addEventListener(name, callback) { handlers.set(`${id}:${name}`, callback); }
     };
   };

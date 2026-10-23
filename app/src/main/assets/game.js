@@ -35,6 +35,12 @@
   const garageCoins = document.getElementById('garageCoins');
   const garageNotice = document.getElementById('garageNotice');
   const finishTripButton = document.getElementById('finishTrip');
+  const openMapButton = document.getElementById('openMap');
+  const arrivalCard = document.getElementById('arrivalCard');
+  const mapPanel = document.getElementById('mapPanel');
+  const mapCanvas = document.getElementById('mapCanvas');
+  const mapAreaEl = document.getElementById('mapArea');
+  const mapHint = document.getElementById('mapHint');
   const width = canvas.width;
   let height = canvas.height;
   const bestKey = 'rio-aventura-best-v1';
@@ -108,6 +114,11 @@
   let economyError = false;
   const economy = readEconomy();
   let state = 'ready';
+  let mapOpen = false;
+  let mapSelected = 'puerto';
+  let mapView = null;
+  let lastMapDraw = 0;
+  const mapHintKey = 'rio-aventura-map-hint-v1';
   let activeRoute = null;
   let launchRouteId = null;
   let tune = world.defaultTune;
@@ -481,7 +492,7 @@
   }
 
   function routeOpen(id) {
-    return Boolean(world.routeById(id)) && world.isOpen(id, worldContext());
+    return !economyError && Boolean(world.routeById(id)) && world.isOpen(id, worldContext());
   }
 
   function setActiveRoute(id) {
@@ -589,6 +600,18 @@
       const label = document.getElementById(`achievement-${achievement.id}`);
       const value = achievementValue(achievement, stats, found);
       label.textContent = value >= achievement.target ? 'Desbloqueado' : `${Math.min(value, achievement.target)}/${achievement.target}`;
+    }
+    for (const node of world.destinations) {
+      const label = document.getElementById(`passport-${node.id}`);
+      if (!label) continue;
+      const route = world.routeFor(node.id);
+      if (!economyError && currentView().discovered.has(node.id)) {
+        const trips = currentView().arrivals.get(node.id) || 0;
+        label.textContent = `✔ Descubierto · ${trips} ${trips === 1 ? 'llegada' : 'llegadas'}`;
+      } else {
+        const status = world.status(node.id, worldContext());
+        label.textContent = status.open ? `Abierto · premio +${route.reward} 🪙` : `🔒 ${status.missing.join(' · ')}`;
+      }
     }
   }
 
@@ -767,6 +790,9 @@
     play.textContent = button;
     if (interrupted) finishTripButton.classList.remove('hidden');
     else finishTripButton.classList.add('hidden');
+    arrivalCard.classList.add('hidden');
+    // El mapa solo se abre entre viajes: no con un viaje en pausa ni uno por retomar.
+    openMapButton.classList.toggle('hidden', Boolean(interrupted) || state === 'paused');
     overlay.classList.remove('hidden');
   }
 
@@ -826,6 +852,12 @@
       showOverlay(`¡Llegaste a<br>${place}!`,
         `Lograste ${score} puntos y ${coinMessage}.${discovery}${opened} Tu récord es ${result.best}.${rankMessage}${dailyMessage}${achievementMessage}${warning}`,
         'Navegar otra vez');
+      if (arrival && arrival.first) {
+        document.getElementById('arrivalTitle').textContent = `🗺️ ¡${place} descubierto!`;
+        document.getElementById('arrivalText').textContent = `Premio de primera visita: +${arrival.reward} 🪙.` +
+          (arrival.opened.length ? ` Rutas nuevas: ${arrival.opened.map(id => world.nodeById(id).name).join(', ')}.` : ' Ya conoces todos los caminos de este lugar.');
+        arrivalCard.classList.remove('hidden');
+      }
     } else {
       showOverlay('¡Fin del<br>viaje!',
         `Lograste ${score} puntos, recogiste ${collectedCoins} monedas flotantes y ${coinMessage}. Tu récord es ${result.best}.${rankMessage}${dailyMessage}${achievementMessage}${warning}`,
@@ -1303,7 +1335,9 @@
       rankToastTimer = Math.max(0, rankToastTimer - dt);
       if (rankToastTimer === 0) rankToast.classList.add('hidden');
     }
-    if (!document.hidden && (profile.quality === 'high' || now - lastRender >= 1000 / 30 - 1)) {
+    if (mapOpen) {
+      drawMapFrame(now);
+    } else if (!document.hidden && (profile.quality === 'high' || now - lastRender >= 1000 / 30 - 1)) {
       render();
       lastRender = now;
       if (state === 'playing') {
@@ -1359,6 +1393,149 @@
     }
     settingsReturnState = null;
   }
+
+
+  // ---- Mapa del mundo ----
+  function nodeState(node) {
+    if (node.kind === 'port') return 'open';
+    if (economyError) return 'locked';
+    if (currentView().discovered.has(node.id)) return 'visited';
+    return routeOpen(node.id) ? 'open' : 'locked';
+  }
+
+  function mapModel() {
+    return {
+      boat: 'puerto',
+      nodes: world.nodes.map(node => ({ id: node.id, kind: node.kind, x: node.x, y: node.y,
+        state: nodeState(node), selected: node.id === mapSelected })),
+      edges: world.destinations.map(node => ({ from: node.route.from, to: node.id, open: nodeState(node) !== 'locked' }))
+    };
+  }
+
+  function layoutMap() {
+    if (!mapView) return;
+    const panel = mapCanvas.getBoundingClientRect();
+    const area = mapAreaEl.getBoundingClientRect();
+    if (!panel.width || !panel.height) return;
+    const scale = Math.min(window.devicePixelRatio || 1, 2) * (currentTier().detail === 0 ? 0.75 : 1);
+    mapView.resize(panel.width * scale, panel.height * scale, {
+      x: (area.left - panel.left) * scale, y: (area.top - panel.top) * scale, w: area.width * scale, h: area.height * scale });
+    mapView.setLite(currentTier().detail === 0);
+  }
+
+  function drawMapFrame(now) {
+    if (document.hidden || !mapView || now - lastMapDraw < 33) return;
+    lastMapDraw = now;
+    mapView.draw(now / 1000, mapModel());
+  }
+
+  function updateMapInfo() {
+    const node = world.nodeById(mapSelected) || world.nodeById('puerto');
+    const sail = document.getElementById('sail');
+    const freeSail = document.getElementById('freeSail');
+    const facts = document.getElementById('mapFacts');
+    const lock = document.getElementById('mapLock');
+    document.getElementById('mapName').textContent = `${node.icon} ${node.name}`;
+    document.getElementById('mapBlurb').textContent = node.blurb;
+    if (node.kind === 'port') {
+      facts.textContent = '';
+      lock.textContent = '';
+      sail.classList.add('hidden');
+      freeSail.textContent = 'Navegación libre';
+      return;
+    }
+    sail.classList.remove('hidden');
+    freeSail.textContent = 'Navegación libre';
+    const route = world.routeFor(node.id);
+    const status = world.status(node.id, worldContext());
+    const seen = !economyError && currentView().discovered.has(node.id);
+    facts.textContent = [`📏 ${route.distance} m`, `⏱ ${world.durationText(route)}`,
+      `Dificultad ${'★'.repeat(route.difficulty)}${'☆'.repeat(5 - route.difficulty)}`,
+      seen ? '✔ Descubierto' : `🪙 +${route.reward} la primera vez`].join('  ·  ');
+    lock.textContent = status.open ? '' : `🔒 ${status.missing.join(' · ')}`;
+    sail.disabled = !status.open || economyError;
+    sail.textContent = !status.open ? '🔒 Bloqueada' : seen ? `Navegar a ${node.name}` : `Zarpar a ${node.name}`;
+  }
+
+  function updateMapProgress() {
+    const found = economyError ? 0 : currentView().discovered.size;
+    document.getElementById('mapProgress').textContent = `Destinos descubiertos ${found}/${world.destinations.length}`;
+    document.getElementById('mapCoins').textContent = `🪙 ${economyError ? '!' : currentView().coins}`;
+    for (const node of world.nodes) {
+      const button = document.getElementById(`node-${node.id}`);
+      const nodeStatus = nodeState(node);
+      button.classList.toggle('locked', nodeStatus === 'locked');
+      button.setAttribute('aria-label', `${node.name}${nodeStatus === 'locked' ? ', bloqueado' : nodeStatus === 'visited' ? ', descubierto' : ''}`);
+      button.setAttribute('aria-pressed', node.id === mapSelected ? 'true' : 'false');
+    }
+  }
+
+  function selectNode(id) {
+    if (!world.nodeById(id)) return;
+    mapSelected = id;
+    updateMapProgress();
+    updateMapInfo();
+  }
+
+  function openMap() {
+    if (mapOpen || settingsReturnState !== null || interrupted) return;
+    if (state !== 'ready' && state !== 'over' && state !== 'arrived') return;
+    if (!mapView && window.RioMap) mapView = window.RioMap.create(mapCanvas, { lite: currentTier().detail === 0 });
+    mapOpen = true;
+    rankToastTimer = 0;
+    rankToast.classList.add('hidden');
+    // Se propone el siguiente destino por descubrir; si no queda ninguno, el último elegido.
+    const next = world.destinations.find(node => nodeState(node) === 'open');
+    mapSelected = next ? next.id : launchRouteId && world.nodeById(launchRouteId) ? launchRouteId : 'puerto';
+    mapPanel.classList.remove('hidden');
+    overlay.classList.add('hidden');
+    updateMapProgress();
+    updateMapInfo();
+    layoutMap();
+    let seenHint = false;
+    try { seenHint = localStorage.getItem(mapHintKey) === '1'; } catch (error) { seenHint = false; }
+    mapHint.classList.toggle('hidden', seenHint);
+  }
+
+  function dismissMapHint() {
+    if (mapHint.classList.contains('hidden')) return;
+    mapHint.classList.add('hidden');
+    try { localStorage.setItem(mapHintKey, '1'); } catch (error) { /* la pista volverá a salir; no pasa nada */ }
+  }
+
+  function closeMap() {
+    if (!mapOpen) return;
+    mapOpen = false;
+    mapPanel.classList.add('hidden');
+    overlay.classList.remove('hidden');
+  }
+
+  function sailTo(id) {
+    if (!mapOpen) return;
+    if (id && !routeOpen(id)) return;
+    launchRouteId = id || null;
+    closeMap();
+    begin();
+  }
+
+  openMapButton.addEventListener('click', openMap);
+  document.getElementById('closeMap').addEventListener('click', closeMap);
+  document.getElementById('sail').addEventListener('click', () => {
+    const node = world.nodeById(mapSelected);
+    if (node && node.kind === 'dest') sailTo(node.id);
+  });
+  document.getElementById('freeSail').addEventListener('click', () => sailTo(null));
+  for (const node of world.nodes) {
+    document.getElementById(`node-${node.id}`).addEventListener('click', () => { dismissMapHint(); selectNode(node.id); });
+  }
+  mapHint.addEventListener('click', dismissMapHint);
+  // Botón «atrás» de Android: MainActivity lo llama; devuelve true si el juego lo atendió.
+  window.rioAventuraBack = () => {
+    if (mapOpen) { closeMap(); return true; }
+    if (settingsReturnState !== null) { closeSettings(); return true; }
+    if (state === 'playing') { pauseTrip(); return true; }
+    return false;
+  };
 
   settingsButton.addEventListener('click', openSettings);
   openingSettings.addEventListener('click', openSettings);

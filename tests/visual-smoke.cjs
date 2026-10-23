@@ -42,7 +42,8 @@ const element = id => {
     classList: {
       add(name) { classes.add(name); },
       remove(name) { classes.delete(name); },
-      contains(name) { return classes.has(name); }
+      contains(name) { return classes.has(name); },
+      toggle(name, force) { if (force === undefined ? !classes.has(name) : force) classes.add(name); else classes.delete(name); }
     },
     addEventListener(name, callback) { events.set(`${id}:${name}`, callback); }
   };
@@ -566,3 +567,4 @@ require('./progress-safety.cjs');
 require('./art-render.cjs');
 require('./world.cjs');
 require('./exploration.cjs');
+require('./map-ui.cjs');
