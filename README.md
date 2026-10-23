@@ -60,6 +60,19 @@ se concede solo el escudo. El escudo bloquea choques; un obstáculo que lo toque
 no cuenta como esquiva ni suma puntos. Las recompensas son temporales de esa
 partida, no monedas ni compras.
 
+La versión 2.0 inicia la progresión permanente sin conexión: al terminar un viaje
+se ganan monedas según distancia y esquivas (entre 1 y 80 por viaje). Ajustes
+incluye una tienda y un garaje con la lancha Clásica y dos colores de lancha
+comprables: Coral (15 monedas) y Tormenta (45 monedas). Cambiar de lancha solo
+modifica el aspecto, no la física ni las colisiones. Las compras y recompensas
+se guardan como eventos locales únicos para no cobrarlas dos veces ni repetir
+una compra. El respaldo manual nuevo incluye monedas y lanchas; los respaldos
+anteriores siguen aceptándose. Si dos copias contienen historiales de monedas
+divergentes, el juego rechaza mezclarlos automáticamente para evitar duplicación
+o pérdida. Conserva una copia fuera del teléfono antes de desinstalar: Android
+no respalda automáticamente los datos de esta app. Google Play Games,
+clasificaciones y sincronización en la nube siguen pendientes de configurar.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
