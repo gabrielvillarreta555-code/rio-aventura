@@ -248,7 +248,7 @@ sandbox.document.hidden = false;
 sandboxMath.random = () => 0.2;
 const source = fs.readFileSync('app/src/main/assets/game.js', 'utf8');
 const inspectedSource = source.replace('  requestAnimationFrame(frame);\n})();',
-  '  window.__inspectObstacles = () => obstacles;\n  requestAnimationFrame(frame);\n})();');
+  '  window.__inspectObstacles = () => obstacles;\n  window.__inspectGame = () => ({ lives, shieldTimer, stageIndex, runDistance });\n  window.__setLivesForTest = value => { lives = value; updateHud(); };\n  window.__setBoatCenterForTest = () => { boat.x = width / 2; boat.vx = 0; };\n  requestAnimationFrame(frame);\n})();');
 assert.notEqual(inspectedSource, source, 'the smoke test should inspect the active obstacle list');
 vm.runInNewContext(inspectedSource, sandbox);
 events.get('play:click')();
@@ -256,9 +256,21 @@ events.get('game:pointerdown')({ pointerId: 9, clientX: 440 });
 const stagesSeen = new Set();
 const driftPositions = new WeakMap();
 let driftMoved = false;
+let rewardedStages = 0;
+let priorStage = 0;
+let shieldExpired = false;
 for (let time = 105000; time < 135000; time += 50) {
   nextFrame(time);
   stagesSeen.add(elements.get('stageLabel').textContent);
+  const game = sandbox.window.__inspectGame();
+  if (game.stageIndex > priorStage) {
+    rewardedStages++;
+    assert.equal(game.lives, 3, 'stage rewards cannot exceed three lives');
+    assert(game.shieldTimer > 0, 'each new stage should grant a temporary shield');
+    assert(elements.get('lives').textContent.includes('🛡'), 'the shield should be visible in the HUD');
+    priorStage = game.stageIndex;
+  }
+  if (priorStage > 0 && game.shieldTimer === 0 && !elements.get('lives').textContent.includes('🛡')) shieldExpired = true;
   for (const item of sandbox.window.__inspectObstacles()) {
     if (item.kind !== 'drift') continue;
     assert(item.x >= 84 && item.x <= 366, 'drifting logs must stay within the river');
@@ -267,10 +279,40 @@ for (let time = 105000; time < 135000; time += 50) {
   }
 }
 assert.equal(stagesSeen.size, 4, 'a safe run should pass through four distinct stages');
+assert.equal(rewardedStages, 3, 'each completed stage should grant one reward');
+assert(shieldExpired, 'the shield indicator should disappear when protection ends');
 assert(elements.get('stageLabel').textContent.includes('Río bravo'), 'the final stage should remain playable without a distance cap');
 assert(elements.get('stageDistance').textContent.includes('sin fin'), 'the final stage should be endless');
 assert.equal(elements.get('stageProgress').style.width, '100%', 'the final progress indicator should be full');
 assert(driftDraws > 0, 'later stages should render moving driftwood');
 assert(driftMoved, 'drifting logs must move sideways during play');
 assert(elements.get('stageToast').classList.contains('hidden'), 'stage announcements should disappear after a short time');
+
+// Missing health is restored at a stage boundary and shielded contact causes no damage.
+sandboxMath.random = () => 0.5;
+vm.runInNewContext(inspectedSource, sandbox);
+events.get('play:click')();
+events.get('game:pointerdown')({ pointerId: 10, clientX: 440 });
+sandbox.window.__setLivesForTest(2);
+let rewardSeen = false;
+let shieldBlocked = false;
+for (let time = 136000; time < 145000; time += 50) {
+  nextFrame(time);
+  const game = sandbox.window.__inspectGame();
+  if (game.stageIndex === 1 && !rewardSeen) {
+    rewardSeen = true;
+    assert.equal(game.lives, 3, 'a completed stage should restore one missing life');
+    assert(game.shieldTimer > 0, 'the reward should include shield time');
+    assert(elements.get('stageToast').textContent.includes('Vida recuperada'), 'the reward should be announced');
+    events.get('game:pointerup')({ pointerId: 10 });
+    sandbox.window.__setBoatCenterForTest();
+  }
+  if (rewardSeen && game.shieldTimer > 0 && sandbox.window.__inspectObstacles().some(item => item.hit)) {
+    assert.equal(game.lives, 3, 'shielded contact should not cost a life');
+    shieldBlocked = true;
+    break;
+  }
+}
+assert(rewardSeen, 'the healing stage boundary should be reached');
+assert(shieldBlocked, 'an obstacle should contact the shield in the test');
 console.log('Visual smoke test passed');
