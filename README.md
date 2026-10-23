@@ -23,6 +23,28 @@ La versión 1.5 añade brillos móviles y espuma junto a las orillas. Rocas y tr
 levantan pequeñas ondas y tienen más detalles de superficie. Estos cambios son
 visuales: el tamaño de colisión y las reglas del juego no cambian.
 
+La versión 1.6 incorpora un menú de Ajustes y un perfil de invitado con nombre y
+avatar. Guarda localmente viajes terminados, obstáculos esquivados y distancia
+estimada sin reemplazar el récord de puntos existente. La calidad visual se puede
+reducir para usar menos partículas, árboles y reflejos. Google Play Games y el
+guardado en la nube siguen pendientes de la configuración real de Play Console.
+
+La versión 1.7 cuenta una esquiva solo cuando el obstáculo ya pasó sin tocar la
+lancha. Los puntos anteriores de la versión 1.6 se conservan como estimación
+separada: no es posible recalcular jugadas pasadas. Los viajes y la distancia
+siguen registrándose al terminar una partida. En Ajustes se puede generar un
+código de respaldo manual y restaurarlo; guarda ese texto fuera del teléfono
+antes de desinstalar o borrar datos. Al restaurar se conserva el mayor récord y
+el mayor total de cada estadística, sin sumar dos veces una misma copia. El
+respaldo no es una cuenta ni un guardado en la nube.
+
+La versión 1.8 ordena la lancha y los obstáculos por profundidad sin copiar ni
+ordenar el arreglo en cada fotograma. Reutiliza el degradado del agua hasta que
+cambie el tamaño de la pantalla. La calidad reducida dibuja como máximo unos
+30 fotogramas por segundo, pero la física sigue actualizándose con cada ciclo.
+En Ajustes se muestra el último FPS dibujado durante el juego para comparar
+los modos; es una medición orientativa, no una garantía de rendimiento.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta

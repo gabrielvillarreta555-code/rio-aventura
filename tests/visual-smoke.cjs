@@ -5,10 +5,19 @@ const vm = require('node:vm');
 const events = new Map();
 const operations = [];
 const translations = [];
+let fullCanvasFills = 0;
+let waterGradientCreates = 0;
 const gradient = { addColorStop() {} };
 const context = new Proxy({
-  createLinearGradient: () => gradient,
+  createLinearGradient(x0, y0, x1, y1) {
+    if (x0 === 0 && y0 === 0 && x1 === canvas.width && y1 === canvas.height) waterGradientCreates++;
+    return gradient;
+  },
   createRadialGradient: () => gradient,
+  fillRect(x, y, width, height) {
+    if (x === 0 && y === 0 && width === canvas.width && height === canvas.height) fullCanvasFills++;
+    operations.push('fillRect');
+  },
   translate(x, y) {
     assert(Number.isFinite(x) && Number.isFinite(y), 'translate received a non-finite value');
     translations.push([x, y]);
@@ -26,20 +35,37 @@ const context = new Proxy({
   },
   set(target, key, value) { target[key] = value; return true; }
 });
-const element = id => ({
-  id,
-  textContent: '',
-  classList: { add() {}, remove() {} },
-  addEventListener(name, callback) { events.set(`${id}:${name}`, callback); }
-});
+const element = id => {
+  const classes = new Set(id === 'settingsPanel' ? ['hidden'] : []);
+  return {
+    id,
+    textContent: '',
+    value: '',
+    select() { this.selected = true; },
+    classList: {
+      add(name) { classes.add(name); },
+      remove(name) { classes.delete(name); },
+      contains(name) { return classes.has(name); }
+    },
+    addEventListener(name, callback) { events.set(`${id}:${name}`, callback); }
+  };
+};
 const canvas = element('game');
 canvas.width = 450;
 canvas.height = 800;
 canvas.getContext = () => context;
-canvas.getBoundingClientRect = () => ({ width: 450, height: 1000, left: 0 });
+let stageHeight = 1000;
+canvas.getBoundingClientRect = () => ({ width: 450, height: stageHeight, left: 0 });
 canvas.setPointerCapture = () => {};
 const elements = new Map([['game', canvas]]);
 let nextFrame;
+const storage = new Map([
+  ['rio-aventura-best-v1', '42'],
+  ['rio-aventura-profile-v1', '{malformed'],
+  ['rio-aventura-stats-v1', '{malformed']
+]);
+const sandboxMath = Object.create(Math);
+sandboxMath.random = () => 0.5;
 const sandbox = {
   document: {
     getElementById(id) {
@@ -49,12 +75,16 @@ const sandbox = {
     addEventListener(name, callback) { events.set(`document:${name}`, callback); }
   },
   window: { addEventListener(name, callback) { events.set(`window:${name}`, callback); } },
-  localStorage: { getItem: () => null, setItem() {} },
+  localStorage: {
+    getItem(key) { return storage.get(key) ?? null; },
+    setItem(key, value) { storage.set(key, String(value)); }
+  },
   requestAnimationFrame(callback) { nextFrame = callback; },
-  Math
+  Math: sandboxMath
 };
 
 vm.runInNewContext(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
+storage.delete('rio-aventura-stats-v1');
 assert.equal(canvas.height, 1000, 'the playfield should fit a tall phone');
 function boatXAt(time) {
   translations.length = 0;
@@ -82,4 +112,128 @@ assert(operations.includes('translate'), 'the boat and obstacles must be drawn')
 assert(operations.includes('clip'), 'the perspective river must clip water to its banks');
 assert(operations.filter(name => name === 'bezierCurveTo').length > 5, 'moving water shimmer should be drawn');
 assert(operations.filter(name => name === 'arc').length > 20, 'layered riverside trees should be drawn');
+assert.equal(waterGradientCreates, 1, 'the water gradient should be reused between frames');
+const html = fs.readFileSync('app/src/main/assets/index.html', 'utf8');
+for (const id of ['settings', 'openingSettings', 'settingsPanel', 'profileName', 'avatar', 'quality', 'performanceInfo', 'bestScore', 'totalRuns', 'totalDodged', 'legacyDodged', 'playerTag', 'backupText', 'exportProgress', 'importProgress']) {
+  assert(html.includes(`id="${id}"`), `the settings screen needs ${id}`);
+}
+events.get('settings:click')();
+assert(!elements.get('settingsPanel').classList.contains('hidden'), 'settings should open');
+assert(/FPS dibujados/.test(elements.get('performanceInfo').textContent), 'settings should show a gameplay FPS sample');
+assert.equal(elements.get('profileName').value, 'Invitado', 'a new player starts as a guest');
+assert.equal(elements.get('bestScore').textContent, '42', 'the existing record should remain visible');
+elements.get('profileName').value = 'Gabriel';
+events.get('saveProfile:click')();
+assert.equal(JSON.parse(storage.get('rio-aventura-profile-v1')).name, 'Gabriel', 'guest name should persist');
+assert(elements.get('playerTag').textContent.includes('Gabriel'), 'the player name should appear on the game overlay');
+events.get('avatar:click')();
+assert.equal(JSON.parse(storage.get('rio-aventura-profile-v1')).avatar, 1, 'avatar should persist');
+elements.get('quality').value = 'low';
+events.get('quality:change')();
+assert.equal(JSON.parse(storage.get('rio-aventura-profile-v1')).quality, 'low', 'quality choice should persist');
+operations.length = 0;
+nextFrame(2512);
+nextFrame(2544);
+assert(operations.includes('fillRect'), 'reduced quality should still draw the game');
+assert(!operations.includes('bezierCurveTo'), 'reduced quality should omit water shimmer');
+events.get('closeSettings:click')();
+assert(elements.get('settingsPanel').classList.contains('hidden'), 'settings should close');
+assert.equal(elements.get('pause').textContent, 'Ⅱ', 'closing settings should resume play');
+events.get('game:pointerdown')({ pointerId: 3, clientX: 350 });
+for (let time = 2560; time <= 4500; time += 16) nextFrame(time);
+events.get('game:pointerup')({ pointerId: 3 });
+let foregroundOrderSeen = false;
+for (let time = 4550; time <= 7000; time += 50) {
+  translations.length = 0;
+  nextFrame(time);
+  const boatIndex = translations.findIndex(([x, y]) => x > 315 && x < 370 && y > 840 && y < 860);
+  const obstacleIndex = translations.findIndex(([x, y]) => x > 175 && x < 230 && y > 880 && y < 1000);
+  if (boatIndex >= 0 && obstacleIndex >= 0) {
+    assert(boatIndex < obstacleIndex, 'a foreground obstacle should be drawn over the boat');
+    foregroundOrderSeen = true;
+  }
+}
+assert(foregroundOrderSeen, 'the test should observe a foreground obstacle');
+assert(Number.parseInt(elements.get('score').textContent, 10) > 0, 'a safely passed obstacle should score');
+events.get('play:click')();
+for (let time = 7050; time < 40000 && !storage.has('rio-aventura-stats-v2'); time += 50) nextFrame(time);
+const stats = JSON.parse(storage.get('rio-aventura-stats-v2') || 'null');
+assert(stats && stats.runs === 1, 'finishing a trip should save one completed run');
+assert(stats.distance > 0, 'finished trips should save distance');
+assert.equal(stats.version, 2, 'accurate dodges need the new statistics format');
+assert.equal(stats.dodged, 0, 'obstacles that hit the boat must not count as dodged');
+assert.equal(storage.get('rio-aventura-best-v1'), '42', 'new statistics must not erase the old record');
+events.get('openingSettings:click')();
+assert.equal(elements.get('totalRuns').textContent, '1', 'settings should show saved trips');
+assert.equal(elements.get('totalDistance').textContent, `${stats.distance} m`, 'settings should show saved distance');
+assert.equal(elements.get('totalDodged').textContent, '0', 'settings should show confirmed dodges only');
+events.get('exportProgress:click')();
+const backup = elements.get('backupText').value;
+const decodedBackup = JSON.parse(backup);
+assert.equal(decodedBackup.format, 'rio-aventura-progress-v1', 'manual backup needs a versioned format');
+assert.equal(decodedBackup.profile.name, 'Gabriel', 'manual backup should include the guest name');
+assert.equal(decodedBackup.best, 42, 'manual backup should include the original record');
+assert.equal(decodedBackup.stats.runs, 1, 'manual backup should include completed trips');
+assert(elements.get('backupText').selected, 'backup text should be selected for copying');
+elements.get('backupText').value = '{invalid';
+events.get('importProgress:click')();
+assert.equal(storage.get('rio-aventura-stats-v2'), JSON.stringify(stats), 'invalid backup must not modify progress');
+elements.get('backupText').value = backup;
+events.get('importProgress:click')();
+assert.equal(JSON.parse(storage.get('rio-aventura-stats-v2')).runs, 1, 'restoring twice must not duplicate trips');
+events.get('closeSettings:click')();
+vm.runInNewContext(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
+events.get('openingSettings:click')();
+assert.equal(elements.get('profileName').value, 'Gabriel', 'guest name should survive a fresh game launch');
+assert.equal(elements.get('avatar').textContent, '🧒', 'avatar should survive a fresh game launch');
+assert.equal(elements.get('quality').value, 'low', 'graphics quality should survive a fresh game launch');
+assert.equal(elements.get('bestScore').textContent, '42', 'record should survive a fresh game launch');
+assert.equal(elements.get('totalRuns').textContent, '1', 'trips should survive a fresh game launch');
+const higherBackup = JSON.parse(backup);
+higherBackup.best = 48;
+higherBackup.stats.runs = 3;
+higherBackup.stats.dodged = 4;
+higherBackup.stats.distance += 250;
+elements.get('backupText').value = JSON.stringify(higherBackup);
+events.get('importProgress:click')();
+assert.equal(elements.get('bestScore').textContent, '48', 'restore should accept a higher record');
+assert.equal(elements.get('totalRuns').textContent, '3', 'restore should accept higher trip totals');
+elements.get('backupText').value = backup;
+events.get('importProgress:click')();
+assert.equal(elements.get('totalRuns').textContent, '3', 'an older backup must not decrease or duplicate totals');
+events.get('closeSettings:click')();
+storage.set('rio-aventura-stats-v1', JSON.stringify({ runs: 5, dodged: 17, distance: 520 }));
+storage.delete('rio-aventura-stats-v2');
+vm.runInNewContext(fs.readFileSync('app/src/main/assets/game.js', 'utf8'), sandbox);
+events.get('openingSettings:click')();
+assert.equal(elements.get('totalRuns').textContent, '5', 'legacy trip count should migrate');
+assert.equal(elements.get('totalDodged').textContent, '0', 'old points must not be presented as verified dodges');
+assert.equal(elements.get('legacyDodged').textContent, '17', 'old estimated points should remain visible');
+elements.get('quality').value = 'high';
+events.get('quality:change')();
+events.get('closeSettings:click')();
+fullCanvasFills = 0;
+for (let time = 100000; time < 100960; time += 16) nextFrame(time);
+const highQualityFills = fullCanvasFills;
+assert(highQualityFills > 100, 'high quality should render nearly every display frame');
+const gradientsBeforeResize = waterGradientCreates;
+events.get('openingSettings:click')();
+elements.get('quality').value = 'low';
+events.get('quality:change')();
+events.get('closeSettings:click')();
+fullCanvasFills = 0;
+for (let time = 101000; time < 101960; time += 16) nextFrame(time);
+assert(fullCanvasFills < highQualityFills * 0.7, 'reduced quality should draw substantially fewer frames');
+assert.equal(waterGradientCreates, gradientsBeforeResize, 'water gradient should remain cached');
+stageHeight = 1100;
+events.get('window:resize')();
+nextFrame(102000);
+assert.equal(waterGradientCreates, gradientsBeforeResize + 1, 'resizing should rebuild the water gradient');
+fullCanvasFills = 0;
+for (let time = 103000; time < 104000; time += 1000 / 30) nextFrame(time);
+assert(fullCanvasFills >= 58, 'reduced quality should not halve an actual 30 Hz display');
+sandbox.document.hidden = true;
+fullCanvasFills = 0;
+nextFrame(104050);
+assert.equal(fullCanvasFills, 0, 'hidden pages should not redraw the canvas');
 console.log('Visual smoke test passed');
