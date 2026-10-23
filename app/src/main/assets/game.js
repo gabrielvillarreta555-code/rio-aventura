@@ -706,6 +706,7 @@
 
   // Keep the original 450-unit playfield while filling taller phone screens.
   function resizeStage() {
+    if (mapOpen) layoutMap();
     const bounds = canvas.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return;
     const nextHeight = Math.max(800, Math.round(width * bounds.height / bounds.width));
