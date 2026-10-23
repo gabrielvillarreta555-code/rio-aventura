@@ -5,8 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const artSource = fs.readFileSync('app/src/main/assets/art.js', 'utf8');
-const gameSource = fs.readFileSync('app/src/main/assets/game.js', 'utf8');
+const { libs: artSource, game: gameSource } = require('./sources.cjs');
 const anchor = '  requestAnimationFrame(frame);\n})();';
 const hooks = `
   window.__game = {
@@ -56,7 +55,8 @@ function launch({ store = makeStore(), pixelRatio, sprites = true, quality } = {
     return {
       id, textContent: '', value: '', style: {}, attributes: {},
       setAttribute(name, value) { this.attributes[name] = value; }, select() {},
-      classList: { add: n => classes.add(n), remove: n => classes.delete(n), contains: n => classes.has(n) },
+      classList: { add: n => classes.add(n), remove: n => classes.delete(n), contains: n => classes.has(n),
+        toggle: (n, force) => { if (force === undefined ? !classes.has(n) : force) classes.add(n); else classes.delete(n); } },
       addEventListener(name, callback) { handlers.set(`${id}:${name}`, callback); }
     };
   };

@@ -57,6 +57,18 @@ public class MainActivity extends Activity {
         setContentView(game);
     }
 
+    // «Atrás» cierra primero el mapa o los ajustes y pausa el viaje; solo sale de la app
+    // cuando el juego no tiene nada que cerrar (o si la página no está disponible).
+    @Override public void onBackPressed() {
+        if (game == null) {
+            super.onBackPressed();
+            return;
+        }
+        game.evaluateJavascript("window.rioAventuraBack ? window.rioAventuraBack() : false", handled -> {
+            if (!"true".equals(handled)) MainActivity.super.onBackPressed();
+        });
+    }
+
     // El juego guarda el viaje en curso antes de que Android pueda cerrar la app.
     @Override protected void onPause() {
         if (game != null) game.evaluateJavascript("window.rioAventuraSave && window.rioAventuraSave()", null);

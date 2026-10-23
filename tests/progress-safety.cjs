@@ -5,8 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const artSource = fs.readFileSync('app/src/main/assets/art.js', 'utf8');
-const gameSource = fs.readFileSync('app/src/main/assets/game.js', 'utf8');
+const { libs: artSource, game: gameSource } = require('./sources.cjs');
 const anchor = '  requestAnimationFrame(frame);\n})();';
 const countReplays = '  function replayEconomy(events, base = null) {';
 const hooks = `
@@ -53,7 +52,8 @@ function launch(store) {
       id, textContent: '', value: '', style: {}, attributes: {},
       setAttribute(name, value) { this.attributes[name] = value; },
       select() {},
-      classList: { add: name => set.add(name), remove: name => set.delete(name), contains: name => set.has(name) },
+      classList: { add: name => set.add(name), remove: name => set.delete(name), contains: name => set.has(name),
+        toggle: (name, force) => { if (force === undefined ? !set.has(name) : force) set.add(name); else set.delete(name); } },
       addEventListener(name, callback) { handlers.set(`${id}:${name}`, callback); }
     };
   };

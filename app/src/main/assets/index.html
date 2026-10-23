@@ -90,6 +90,40 @@
     #garageNotice { min-height: 20px; margin-top: 8px; color: #c7f7db; font-size: 13px; }
     .googleNote { margin-top: 20px; padding: 12px; border: 1px solid #a5e7df44; border-radius: 14px; }
     @media (max-width: 380px) { #hud { left: 8px; right: 8px; gap: 4px; } #hud span { padding: 7px; font-size: 13px; } #hudActions { gap: 4px; } #hudActions button { width: 38px; height: 38px; } #stageHud { left: 8px; right: 8px; } #stageHudText { font-size: 11px; } }
+    #openMap { margin-top: 14px; min-height: 48px; padding: 12px 26px; border: 1px solid rgba(255,226,140,.65); border-radius: 16px; background: linear-gradient(180deg, rgba(20,118,134,.92), rgba(8,70,92,.94)); color: #ffe58a; font: 800 18px system-ui, sans-serif; box-shadow: 0 6px 14px rgba(0,36,48,.35), inset 0 1px 0 rgba(255,255,255,.3); }
+    #openMap.hidden { display: none; }
+    #arrivalCard { margin: 12px 0 2px; padding: 12px 16px; max-width: 320px; border: 2px solid #ffe59a; border-radius: 18px; background: linear-gradient(180deg, rgba(18,104,120,.94), rgba(8,62,82,.96)); box-shadow: 0 10px 26px rgba(0,36,48,.45); animation: toastEnter .45s ease-out; }
+    #arrivalCard.hidden { display: none; }
+    #arrivalCard strong { display: block; color: #ffe58a; font-size: 18px; }
+    #arrivalCard span { display: block; margin-top: 4px; color: #f0fffb; font-size: 14px; line-height: 1.35; }
+    #mapPanel { position: absolute; z-index: 5; inset: 0; background: #1e6f86; overflow: hidden; }
+    #mapPanel.hidden { display: none; }
+    #mapCanvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: manipulation; }
+    #mapTop { position: absolute; top: max(12px, env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; z-index: 2; }
+    #mapTop h2 { margin: 0; flex: 1; text-align: center; font-size: 19px; text-shadow: 0 2px 6px rgba(0,36,48,.7); }
+    #closeMap { min-height: 44px; min-width: 44px; padding: 8px 14px; border: 1px solid rgba(190,255,240,.45); border-radius: 14px; background: linear-gradient(180deg, rgba(16,96,112,.9), rgba(8,58,78,.92)); color: white; font: 800 16px system-ui, sans-serif; }
+    #mapCoins { padding: 8px 12px; border-radius: 14px; background: linear-gradient(180deg, rgba(130,84,12,.86), rgba(80,46,8,.9)); border: 1px solid rgba(255,226,140,.55); color: #ffe58a; font-weight: 800; }
+    #mapProgress { position: absolute; top: calc(max(12px, env(safe-area-inset-top)) + 54px); left: 0; right: 0; text-align: center; z-index: 2; font: 700 13px system-ui, sans-serif; text-shadow: 0 2px 6px rgba(0,36,48,.8); pointer-events: none; }
+    #mapArea { position: absolute; z-index: 1; left: 14px; right: 14px; top: calc(max(12px, env(safe-area-inset-top)) + 80px); bottom: calc(256px + max(8px, env(safe-area-inset-bottom))); }
+    .mapNode { position: absolute; left: calc(var(--x) * 100%); top: calc(var(--y) * 100%); width: 64px; height: 64px; margin: -32px 0 0 -32px; border: 0; border-radius: 50%; background: transparent; color: white; font-size: 26px; text-shadow: 0 2px 6px rgba(0,36,48,.8); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .mapNode span { display: block; margin-top: -6px; transform: translateY(-14px); }
+    .mapNode::after { content: attr(data-label); position: absolute; left: 50%; top: 100%; transform: translate(-50%, 6px); padding: 1px 8px; border-radius: 9px; background: rgba(6,50,66,.72); font: 700 11px system-ui, sans-serif; white-space: nowrap; pointer-events: none; }
+    .mapNode.locked::after { opacity: .7; }
+    .mapNode.locked span { filter: grayscale(1); opacity: .75; }
+    .mapNode:focus-visible { outline: 3px solid #ffe58a; outline-offset: -4px; }
+    #mapHint { position: absolute; z-index: 3; left: 14px; right: 14px; top: calc(max(12px, env(safe-area-inset-top)) + 80px); padding: 12px 14px; border-radius: 14px; background: #183e4aee; border: 1px solid #ffe59a; color: #fff4c1; text-align: center; font-weight: 700; font-size: 14px; }
+    #mapHint.hidden { display: none; }
+    #mapInfo { position: absolute; z-index: 2; left: 12px; right: 12px; bottom: max(10px, env(safe-area-inset-bottom)); max-width: 520px; margin: 0 auto; padding: 14px; border: 1px solid rgba(255,226,140,.5); border-radius: 22px; background: linear-gradient(180deg, rgba(14,86,104,.96), rgba(7,52,70,.97)); box-shadow: 0 14px 34px rgba(0,26,34,.55); }
+    #mapInfo h3 { margin: 0; font-size: 20px; color: #ffe58a; }
+    #mapInfo p { margin: 4px 0 8px; font-size: 14px; line-height: 1.35; color: #e6faf6; }
+    #mapFacts { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: #ffdf85; }
+    #mapLock { min-height: 18px; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: #ffb4a4; }
+    #mapActions { display: flex; gap: 8px; }
+    #sail { flex: 1; min-height: 48px; padding: 10px 14px; border: 0; border-radius: 14px; background: linear-gradient(180deg, #fff0a8, #ffcf4a 55%, #ffb82e); color: #3a2308; font: 800 17px system-ui, sans-serif; box-shadow: 0 5px 0 #bf7f1f; }
+    #sail:disabled { background: #8fa8a6; color: #20383c; box-shadow: 0 5px 0 #5b7270; }
+    #freeSail { min-height: 48px; padding: 10px 14px; border: 1px solid rgba(190,255,240,.5); border-radius: 14px; background: rgba(8,58,78,.9); color: white; font: 700 14px system-ui, sans-serif; }
+    @media (max-height: 520px) { #mapArea { right: 300px; bottom: 12px; } #mapInfo { left: auto; right: 12px; top: calc(max(12px, env(safe-area-inset-top)) + 54px); bottom: 12px; width: 280px; overflow-y: auto; } #mapProgress { right: 300px; } }
+    .passportCard small b { color: #ffdd79; }
     #hint { position: absolute; bottom: max(24px, env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 14px; font-weight: 700; color: #efffff; text-shadow: 0 2px 8px #153a49; pointer-events: none; }
   </style>
 </head>
@@ -100,8 +134,27 @@
     <div id="stageHud" aria-live="off"><div id="stageHudText"><span id="stageLabel">Tramo 1 · Orillas tranquilas</span><span id="stageDistance">0 / 100 m</span></div><div id="stageTrack"><div id="stageProgress"></div></div></div>
     <div id="stageToast" class="hidden" role="status" aria-live="polite"></div>
     <div id="coinHud">🪙 0</div>
-    <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><p id="message">Esquiva las rocas, recoge monedas flotantes y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="play" type="button">¡Jugar!</button><button id="finishTrip" type="button" class="hidden">Cobrar y empezar de nuevo</button><button id="openingSettings" type="button">Ajustes</button></div>
+    <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><div id="arrivalCard" class="hidden" role="status" aria-live="polite"><strong id="arrivalTitle"></strong><span id="arrivalText"></span></div><p id="message">Esquiva las rocas, recoge monedas flotantes y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="play" type="button">¡Jugar!</button><button id="openMap" type="button">🗺️ Abrir el mapa</button><button id="finishTrip" type="button" class="hidden">Cobrar y empezar de nuevo</button><button id="openingSettings" type="button">Ajustes</button></div>
     <div id="rankToast" class="hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+    <section id="mapPanel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mapTitle">
+      <canvas id="mapCanvas" width="450" height="800" aria-hidden="true"></canvas>
+      <div id="mapTop"><button id="closeMap" type="button" aria-label="Volver">‹ Volver</button><h2 id="mapTitle">Mapa del río</h2><span id="mapCoins">🪙 0</span></div>
+      <div id="mapProgress">Destinos descubiertos 0/5</div>
+      <div id="mapArea">
+        <button id="node-puerto" class="mapNode" data-label="Puerto" type="button" style="--x:.5;--y:.86" aria-label="Puerto Palmar"><span>⚓</span></button>
+        <button id="node-aldea" class="mapNode" data-label="Aldea" type="button" style="--x:.76;--y:.69" aria-label="Aldea Coral"><span>🏘️</span></button>
+        <button id="node-manglar" class="mapNode" data-label="Manglar" type="button" style="--x:.23;--y:.58" aria-label="Manglar Sombrío"><span>🌿</span></button>
+        <button id="node-cascada" class="mapNode" data-label="Cascada" type="button" style="--x:.77;--y:.45" aria-label="Cascada Brumosa"><span>🌊</span></button>
+        <button id="node-ruinas" class="mapNode" data-label="Ruinas" type="button" style="--x:.4;--y:.32" aria-label="Ruinas del Sol"><span>🏛️</span></button>
+        <button id="node-laguna" class="mapNode" data-label="Laguna" type="button" style="--x:.64;--y:.14" aria-label="Laguna de las Luciérnagas"><span>✨</span></button>
+      </div>
+      <div id="mapHint" class="hidden" role="status">Toca un destino para ver su ruta. Descubre lugares nuevos para abrir más caminos.</div>
+      <div id="mapInfo">
+        <h3 id="mapName">Puerto Palmar</h3><p id="mapBlurb"></p>
+        <div id="mapFacts"></div><div id="mapLock" role="status" aria-live="polite"></div>
+        <div id="mapActions"><button id="sail" type="button">Zarpar</button><button id="freeSail" type="button">Navegación libre</button></div>
+      </div>
+    </section>
     <section id="settingsPanel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
       <div class="settingsCard">
         <div class="settingsHeader"><h2 id="settingsTitle">Ajustes</h2><button id="closeSettings" type="button">Cerrar</button></div>
@@ -129,6 +182,15 @@
         <div class="goalCard"><strong>🧭 Remero constante · 10 viajes</strong><small id="achievement-regular">0/10</small></div>
         <div class="goalCard"><strong>🪨 Esquivador · 25 esquivas</strong><small id="achievement-dodger">0/25</small></div>
         <div class="goalCard"><strong>🌊 Viajero del río · 1500 m</strong><small id="achievement-traveler">0/1500</small></div>
+        <div class="goalCard"><strong>🧭 Primer destino</strong><small id="achievement-explorer">0/1</small></div>
+        <div class="goalCard"><strong>🗺️ Cartógrafo · descubre los 5 destinos</strong><small id="achievement-cartographer">0/5</small></div>
+        <h3>Pasaporte del río</h3>
+        <p>Cada destino se descubre una vez y da su premio de primera visita. Las rutas se abren al descubrir otros lugares.</p>
+        <div class="goalCard passportCard"><strong>🏘️ Aldea Coral</strong><small id="passport-aldea">Sin descubrir</small></div>
+        <div class="goalCard passportCard"><strong>🌿 Manglar Sombrío</strong><small id="passport-manglar">Sin descubrir</small></div>
+        <div class="goalCard passportCard"><strong>🌊 Cascada Brumosa</strong><small id="passport-cascada">Sin descubrir</small></div>
+        <div class="goalCard passportCard"><strong>🏛️ Ruinas del Sol</strong><small id="passport-ruinas">Sin descubrir</small></div>
+        <div class="goalCard passportCard"><strong>✨ Laguna de las Luciérnagas</strong><small id="passport-laguna">Sin descubrir</small></div>
         <h3>Tienda y garaje</h3>
         <p>Saldo: <span id="garageCoins">0 monedas</span>. Gana monedas al terminar viajes, con monedas flotantes y misiones. Las lanchas solo cambian de color, no dan ventaja.</p>
         <div class="boatCard"><div><strong>🚤 Clásica</strong><small>Incluida</small></div><button id="boat-classic" type="button">Equipada</button></div>
@@ -150,7 +212,10 @@
     </section>
     <div id="hint">← Mantén pulsado para remar →</div>
   </main>
+  <script src="world.js"></script>
   <script src="art.js"></script>
+  <script src="art-themes.js"></script>
+  <script src="map.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

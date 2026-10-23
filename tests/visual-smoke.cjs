@@ -42,7 +42,8 @@ const element = id => {
     classList: {
       add(name) { classes.add(name); },
       remove(name) { classes.delete(name); },
-      contains(name) { return classes.has(name); }
+      contains(name) { return classes.has(name); },
+      toggle(name, force) { if (force === undefined ? !classes.has(name) : force) classes.add(name); else classes.delete(name); }
     },
     addEventListener(name, callback) { events.set(`${id}:${name}`, callback); }
   };
@@ -88,7 +89,7 @@ const sandbox = {
 // Relanzamiento con cierre limpio: las pruebas anteriores abandonan viajes sin terminar y,
 // como un teléfono real, el juego ofrecería retomarlos. Los casos de viaje interrumpido
 // usan vm.runInNewContext directamente.
-const artSource = fs.readFileSync('app/src/main/assets/art.js', 'utf8');
+const artSource = require('./sources.cjs').libs;
 function launch(code, context) {
   storage.delete('rio-aventura-trip-v1');
   vm.runInNewContext(`${artSource}\n${code}`, context);
@@ -564,3 +565,7 @@ delete sandbox.Date;
 console.log('Visual smoke test passed');
 require('./progress-safety.cjs');
 require('./art-render.cjs');
+require('./world.cjs');
+require('./exploration.cjs');
+require('./map-ui.cjs');
+require('./themes.cjs');
