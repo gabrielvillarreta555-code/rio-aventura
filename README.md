@@ -23,6 +23,12 @@ La versión 1.5 añade brillos móviles y espuma junto a las orillas. Rocas y tr
 levantan pequeñas ondas y tienen más detalles de superficie. Estos cambios son
 visuales: el tamaño de colisión y las reglas del juego no cambian.
 
+La versión 1.6 incorpora un menú de Ajustes y un perfil de invitado con nombre y
+avatar. Guarda localmente viajes terminados, obstáculos esquivados y distancia
+estimada sin reemplazar el récord de puntos existente. La calidad visual se puede
+reducir para usar menos partículas, árboles y reflejos. Google Play Games y el
+guardado en la nube siguen pendientes de la configuración real de Play Console.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
