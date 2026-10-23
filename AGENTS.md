@@ -32,8 +32,12 @@ compartida, cámbiala en los dos archivos.
 
 ## Estructura
 
-- `app/src/main/assets/game.js` — todo el juego (física, controles, colisiones,
-  dibujo en Canvas 2D). Es el archivo que se empaqueta en el APK.
+- `app/src/main/assets/game.js` — las reglas del juego (física, controles,
+  colisiones, progreso). Entrega una escena a `art.js` en cada fotograma.
+- `app/src/main/assets/art.js` — todo el dibujo en Canvas 2D (sprites en caché,
+  agua, orillas, efectos, calidad por niveles). Solo pinta: no contiene reglas.
+  Los degradados, sprites y patrones se crean al iniciar o al cambiar de tamaño,
+  nunca por fotograma; las pruebas vigilan ese presupuesto.
 - `app/src/main/assets/index.html` — pantalla, HUD y botones.
 - `app/src/main/java/com/example/rioaventura/MainActivity.java` — WebView a
   pantalla completa que carga `file:///android_asset/index.html`.
@@ -56,6 +60,8 @@ compartida, cámbiala en los dos archivos.
   clave `rio-aventura-best-v1`.
 - Al pasar a segundo plano (`visibilitychange`) el juego se pausa.
 - Sin permisos de Android ni conexión a internet.
+- Los cambios visuales viven en `art.js` y no deben alterar radios de colisión ni
+  posiciones lógicas; `art.js` debe cargarse antes que `game.js`.
 
 ## Rendimiento en Android
 

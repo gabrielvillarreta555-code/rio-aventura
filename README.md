@@ -140,6 +140,33 @@ actualizar encima de una APK firmada con otra clave; si falla la instalación,
 genera antes una copia manual en Ajustes. Para no depender de esto hace falta
 una clave de firma estable guardada como secreto de GitHub.
 
+La versión 2.4 renueva todo el aspecto del juego con un estilo 2.5D tropical, sin
+tocar controles, física, colisiones, monedas, rangos, misiones, garaje ni datos
+guardados. El dibujo vive ahora en `art.js` (solo pinta; `game.js` conserva todas
+las reglas y le entrega una escena en cada fotograma). Todo el arte es procedural
+y original, sin imágenes externas ni licencias. Novedades visibles: el río tiene
+profundidad (bajíos arenosos, cáusticas, crestas de espuma, destellos y rayos de
+luz), orillas con arena, palmeras, árboles de selva con flores, helechos, juncos y
+rocas con sombras coherentes y montañas lejanas con bruma; la lancha tiene casco con
+grosor, interior, asientos y proa, un remero con sombrero y remo doble que se
+hunde en el agua, ola de proa y estela de espuma; las rocas tienen musgo y espuma,
+los troncos corteza, ramas y anillos, y los troncos a la deriva una flecha
+amarilla; las monedas giran con brillo. Cada tramo tiene su luz (mañana,
+mediodía, tarde dorada y atardecer) con un fundido suave al cambiar, y hay
+destellos al recoger monedas, ondas al chocar, un escudo luminoso y pétalos
+flotando. El HUD usa paneles de cristal, corazones rosas, una barra de tramo
+dorada y una pantalla de título con el juego visible de fondo.
+
+Rendimiento en Android: los elementos se dibujan una vez en lienzos ocultos y se
+copian después; no se crean degradados ni objetos por fotograma; el agua se dibuja
+sin recortes costosos y los patrones se alinean a píxeles. La calidad gráfica es
+automática: mide el tiempo real entre fotogramas y sube o baja una escalera de
+siete niveles (detalle y resolución), recuerda el último nivel estable y deja de
+intentar subir si el teléfono no lo aguanta. La calidad reducida de Ajustes fija
+el nivel mínimo (hasta 30 FPS). En una prueba de laboratorio con un navegador sin
+GPU, la calidad alta iguala a la de 2.3.1 (60 FPS) y la reducida es más rápida;
+no se ha medido en un teléfono físico. Ajustes muestra el nivel gráfico actual.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta

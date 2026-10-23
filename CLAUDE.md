@@ -23,7 +23,9 @@ proponga el pull request.
 
 ## Estructura
 
-- `app/src/main/assets/game.js` — todo el juego. Es lo que va en el APK.
+- `app/src/main/assets/game.js` — las reglas del juego; entrega una escena a `art.js`.
+- `app/src/main/assets/art.js` — todo el dibujo (sprites en caché, niveles de calidad).
+  Solo pinta; se carga antes que `game.js`.
 - `app/src/main/assets/index.html` — pantalla, HUD y botones.
 - `app/src/main/java/com/example/rioaventura/MainActivity.java` — WebView.
 - `tests/visual-smoke.cjs` — test de humo con canvas simulado.
@@ -37,6 +39,7 @@ proponga el pull request.
 - Colisión: roca 19–30, tronco 26, lancha 23, escalados con `depthAt(y)`.
 - 3 vidas, 1.4 s de inmunidad, récord en `localStorage` (`rio-aventura-best-v1`).
 - Pausa automática en `visibilitychange`. Sin permisos ni red.
+- Los cambios visuales no alteran radios de colisión ni posiciones lógicas.
 
 ## Lista de revisión
 
@@ -54,8 +57,9 @@ Cuando revises un pull request, comprueba en este orden:
    cambio de orientación y `resize`, zonas seguras (`env(safe-area-inset-*)`).
 4. **Rendimiento en Android WebView**: asignaciones por fotograma
    (gradientes, arrays, closures, `filter` en bucles grandes), número de
-   partículas, `shadowBlur`/filtros, trabajo cuando el juego está en pausa o en
-   segundo plano, tamaño del canvas frente a `devicePixelRatio`.
+   partículas y de `drawImage` por fotograma, recortes (`clip`) con trazados,
+   `shadowBlur`/filtros, trabajo cuando el juego está en pausa o en segundo
+   plano, y la calidad automática (niveles de detalle y resolución).
 5. **Android**: `minSdk 26`, `targetSdk 35` (edge-to-edge), ciclo de vida de
    `MainActivity`/WebView, sin permisos nuevos injustificados, `versionCode`.
 6. **Tests**: `tests/visual-smoke.cjs` sigue cubriendo el cambio; propone tests

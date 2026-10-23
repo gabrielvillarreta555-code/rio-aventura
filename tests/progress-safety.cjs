@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
+const artSource = fs.readFileSync('app/src/main/assets/art.js', 'utf8');
 const gameSource = fs.readFileSync('app/src/main/assets/game.js', 'utf8');
 const anchor = '  requestAnimationFrame(frame);\n})();';
 const countReplays = '  function replayEconomy(events, base = null) {';
@@ -85,7 +86,7 @@ function launch(store) {
     requestAnimationFrame(callback) { nextFrame = callback; },
     Math: math
   };
-  vm.runInNewContext(hookedSource, sandbox);
+  vm.runInNewContext(`${artSource}\n${hookedSource}`, sandbox);
   let clock = 1000;
   const game = {
     sandbox, handlers, elements,
