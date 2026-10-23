@@ -13,21 +13,95 @@
     canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     #hud { position: absolute; top: max(18px, env(safe-area-inset-top)); left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; pointer-events: none; font-weight: 800; text-shadow: 0 2px 8px #153a49; }
     #hud span { padding: 8px 12px; border-radius: 16px; background: #0d3749aa; }
-    #pause { pointer-events: auto; border: 0; width: 42px; height: 42px; border-radius: 14px; background: #0d3749cc; color: white; font-size: 20px; }
+    #hudActions { display: flex; gap: 8px; pointer-events: auto; }
+    #hudActions button { border: 0; width: 42px; height: 42px; border-radius: 14px; background: #0d3749cc; color: white; font-size: 20px; }
+    #stageHud { position: absolute; top: calc(max(18px, env(safe-area-inset-top)) + 52px); left: 16px; right: 16px; padding: 8px 12px; border-radius: 14px; background: #0d3749b8; pointer-events: none; text-shadow: 0 2px 8px #153a49; }
+    #stageHudText { display: flex; justify-content: space-between; gap: 8px; font: 700 12px system-ui, sans-serif; }
+    #stageDistance { white-space: nowrap; color: #ffdf85; }
+    #stageTrack { margin-top: 6px; height: 5px; border-radius: 9px; background: #ffffff44; overflow: hidden; }
+    #stageProgress { width: 0; height: 100%; background: #ffdf85; transition: width .2s linear; }
+    #stageToast { position: absolute; top: 23%; left: 8%; right: 8%; padding: 13px; border-radius: 16px; background: #103e4bdc; color: #ffdf85; text-align: center; font-weight: 800; font-size: 19px; pointer-events: none; text-shadow: 0 2px 8px #153a49; }
+    #stageToast.hidden { display: none; }
     #overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 26px; background: linear-gradient(#0b2837cb, #0b2837ed); }
     #overlay.hidden { display: none; }
     #overlay h1 { margin: 0; font-size: clamp(38px, 10vw, 58px); line-height: 1; }
+    #playerTag { margin-bottom: 18px; padding: 8px 14px; border: 1px solid #c9eeee77; border-radius: 99px; background: #0e3745; font-weight: 800; }
     #overlay p { max-width: 280px; font-size: 17px; line-height: 1.45; color: #d8f8f6; }
     #play { margin-top: 14px; padding: 16px 32px; border: 0; border-radius: 16px; background: #ffdd79; color: #18353a; font: 800 19px system-ui, sans-serif; box-shadow: 0 8px 0 #c89e42; }
     #play:active { transform: translateY(5px); box-shadow: 0 3px 0 #c89e42; }
+    #openingSettings { margin-top: 20px; padding: 10px 20px; border: 1px solid #c9eeee80; border-radius: 14px; background: #123f4bc9; color: white; font: 700 16px system-ui, sans-serif; }
+    #settingsPanel { position: absolute; z-index: 5; inset: 0; display: flex; justify-content: center; overflow-y: auto; padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); background: #09242cef; }
+    #settingsPanel.hidden { display: none; }
+    .settingsCard { width: min(100%, 520px); margin: auto 0; padding: 20px; border: 1px solid #a5e7df55; border-radius: 24px; background: #123b47; box-shadow: 0 16px 40px #001a2280; }
+    .settingsHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .settingsHeader h2 { margin: 0; font-size: 28px; }
+    .settingsCard h3 { margin: 24px 0 10px; font-size: 18px; }
+    .settingsCard p { color: #c8e7e4; line-height: 1.4; }
+    .settingsCard label { display: block; margin-bottom: 8px; font-weight: 700; }
+    .settingsCard input, .settingsCard select, .settingsCard textarea { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #b2e5df88; border-radius: 12px; background: #092d38; color: white; font: 16px system-ui, sans-serif; }
+    .profileRow { display: flex; align-items: end; gap: 12px; }
+    .profileRow label { flex: 1; margin: 0; }
+    #avatar { width: 54px; height: 46px; border: 1px solid #b2e5df88; border-radius: 12px; background: #092d38; font-size: 27px; }
+    .settingsCard button { cursor: pointer; }
+    #closeSettings, #saveProfile { min-height: 44px; padding: 10px 16px; border: 0; border-radius: 12px; background: #ffdd79; color: #18353a; font: 800 15px system-ui, sans-serif; }
+    #saveProfile { margin-top: 12px; }
+    #profileNotice { min-height: 20px; margin-top: 6px; color: #c7f7db; font-size: 13px; }
+    .statsGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .statsGrid div { padding: 12px; border-radius: 14px; background: #0b2f3a; }
+    .statsGrid strong { display: block; font-size: 21px; color: #ffdd79; }
+    .statsGrid small { color: #c8e7e4; }
+    #backupText { min-height: 96px; resize: vertical; font: 13px ui-monospace, monospace; }
+    .backupActions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+    .backupActions button { min-height: 44px; padding: 10px 14px; border: 1px solid #b2e5df88; border-radius: 12px; background: #0b4b58; color: white; font: 700 14px system-ui, sans-serif; }
+    #backupNotice { min-height: 20px; margin-top: 8px; color: #c7f7db; font-size: 13px; }
+    #coinHud { position: absolute; left: 16px; bottom: max(62px, calc(env(safe-area-inset-bottom) + 54px)); padding: 7px 12px; border-radius: 14px; background: #0d3749bb; color: #ffdf85; font-weight: 800; pointer-events: none; }
+    #garageCoins { color: #ffdf85; font-weight: 800; }
+    .boatCard { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; padding: 11px; border-radius: 14px; background: #0b2f3a; }
+    .boatCard strong { display: block; }
+    .boatCard small { color: #c8e7e4; }
+    .boatCard button { min-height: 42px; min-width: 106px; padding: 8px; border: 0; border-radius: 10px; background: #ffdd79; color: #18353a; font: 800 13px system-ui, sans-serif; }
+    .boatCard button:disabled { background: #a8c2c0; }
+    #garageNotice { min-height: 20px; margin-top: 8px; color: #c7f7db; font-size: 13px; }
+    .googleNote { margin-top: 20px; padding: 12px; border: 1px solid #a5e7df44; border-radius: 14px; }
+    @media (max-width: 380px) { #hud { left: 8px; right: 8px; gap: 4px; } #hud span { padding: 7px; font-size: 13px; } #hudActions { gap: 4px; } #hudActions button { width: 38px; height: 38px; } #stageHud { left: 8px; right: 8px; } #stageHudText { font-size: 11px; } }
     #hint { position: absolute; bottom: max(24px, env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; font-size: 14px; font-weight: 700; color: #efffff; text-shadow: 0 2px 8px #153a49; pointer-events: none; }
   </style>
 </head>
 <body>
   <main id="stage" aria-label="Juego Río Aventura">
     <canvas id="game" width="450" height="800"></canvas>
-    <div id="hud"><span id="score">0 puntos</span><span id="lives">♥ ♥ ♥</span><button id="pause" type="button" aria-label="Pausar">Ⅱ</button></div>
-    <div id="overlay"><h1 id="title">Río<br>Aventura</h1><p id="message">Esquiva las rocas y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="play" type="button">¡Jugar!</button></div>
+    <div id="hud"><span id="score">0 puntos</span><span id="lives">♥ ♥ ♥</span><div id="hudActions"><button id="settings" type="button" aria-label="Abrir ajustes">⚙</button><button id="pause" type="button" aria-label="Pausar">Ⅱ</button></div></div>
+    <div id="stageHud" aria-live="off"><div id="stageHudText"><span id="stageLabel">Tramo 1 · Orillas tranquilas</span><span id="stageDistance">0 / 100 m</span></div><div id="stageTrack"><div id="stageProgress"></div></div></div>
+    <div id="stageToast" class="hidden" role="status" aria-live="polite"></div>
+    <div id="coinHud">🪙 0</div>
+    <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><p id="message">Esquiva las rocas y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="play" type="button">¡Jugar!</button><button id="openingSettings" type="button">Ajustes</button></div>
+    <section id="settingsPanel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="settingsCard">
+        <div class="settingsHeader"><h2 id="settingsTitle">Ajustes</h2><button id="closeSettings" type="button">Cerrar</button></div>
+        <h3>Perfil de invitado</h3>
+        <p>Tu nombre, récord y estadísticas se guardan en este teléfono.</p>
+        <div class="profileRow"><button id="avatar" type="button" aria-label="Cambiar avatar">🚤</button><label for="profileName">Nombre<input id="profileName" type="text" maxlength="18" autocomplete="nickname" placeholder="Invitado"></label></div>
+        <button id="saveProfile" type="button">Guardar perfil</button>
+        <div id="profileNotice" role="status" aria-live="polite"></div>
+        <h3>Estadísticas</h3>
+        <div class="statsGrid"><div><strong id="bestScore">0</strong><small>Récord de puntos</small></div><div><strong id="totalRuns">0</strong><small>Viajes terminados</small></div><div><strong id="totalDodged">0</strong><small>Esquivas confirmadas desde 1.7</small></div><div><strong id="totalDistance">0 m</strong><small>Distancia estimada en viajes terminados</small></div><div><strong id="legacyDodged">0</strong><small>Puntos anteriores estimados</small></div></div>
+        <h3>Tienda y garaje</h3>
+        <p>Saldo: <span id="garageCoins">0 monedas</span>. Gana monedas al terminar viajes. Las lanchas solo cambian de color, no dan ventaja.</p>
+        <div class="boatCard"><div><strong>🚤 Clásica</strong><small>Incluida</small></div><button id="boat-classic" type="button">Equipada</button></div>
+        <div class="boatCard"><div><strong>🛥️ Coral</strong><small>15 monedas</small></div><button id="boat-coral" type="button">Comprar</button></div>
+        <div class="boatCard"><div><strong>⛵ Tormenta</strong><small>45 monedas</small></div><button id="boat-storm" type="button">Comprar</button></div>
+        <div id="garageNotice" role="status" aria-live="polite"></div>
+        <h3>Gráficos</h3>
+        <label for="quality">Calidad visual</label><select id="quality"><option value="high">Alta: todos los efectos</option><option value="low">Reducida: menos efectos y hasta 30 FPS</option></select>
+        <p id="performanceInfo">FPS: juega unos segundos para medirlos.</p>
+        <h3>Copia manual del progreso</h3>
+        <p>Guarda primero tu nombre, genera una copia y conserva el texto fuera del juego. Incluye monedas y lanchas; puede ser largo. Para restaurarla, pégalo aquí. No es un guardado en la nube.</p>
+        <label for="backupText">Código de respaldo</label><textarea id="backupText" spellcheck="false" autocapitalize="off"></textarea>
+        <div class="backupActions"><button id="exportProgress" type="button">Generar copia</button><button id="importProgress" type="button">Restaurar copia</button></div>
+        <div id="backupNotice" role="status" aria-live="polite"></div>
+        <p class="googleNote">Google Play Games: pendiente de configuración. Puedes jugar como invitado sin conexión.</p>
+      </div>
+    </section>
     <div id="hint">← Mantén pulsado para remar →</div>
   </main>
   <script src="game.js"></script>
