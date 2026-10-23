@@ -81,6 +81,15 @@ moneda no acredita saldo hasta terminar. El HUD muestra el bono provisional.
 No cambia los radios de colisión, las lanchas ni los datos guardados existentes.
 Google Play Games y el guardado en la nube siguen pendientes.
 
+La versión 2.2 añade tres rangos permanentes de capitán: Explorador (250 m y
+3 esquivas confirmadas), Navegante (800 m y 15 esquivas) y Capitán del río
+(2000 m y 40 esquivas). Los objetivos usan totales de viajes terminados;
+los puntos estimados anteriores a la 1.7 no cuentan como esquivas. Al terminar
+un viaje que cumpla los dos objetivos, el rango da una sola vez 10, 20 o 40
+monedas, respectivamente. Los rangos y premios se guardan en el mismo registro
+local de monedas y se incluyen en la copia manual; los datos de 2.1 siguen
+siendo válidos. No hay conexión con Google ni clasificación mundial todavía.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
