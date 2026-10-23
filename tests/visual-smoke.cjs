@@ -41,6 +41,7 @@ const context = new Proxy({
   },
   set(target, key, value) {
     if (key === 'fillStyle' && value === '#925b35') driftDraws++;
+    if (key === 'fillStyle' && value === '#ffdf6b' && translations.length) translations.at(-1).coin = true;
     target[key] = value;
     return true;
   }
@@ -162,8 +163,8 @@ let foregroundOrderSeen = false;
 for (let time = 4550; time <= 7000; time += 50) {
   translations.length = 0;
   nextFrame(time);
-  const boatIndex = translations.findIndex(([x, y]) => x > 315 && x < 370 && y > 840 && y < 860);
-  const obstacleIndex = translations.findIndex(([x, y]) => x > 175 && x < 230 && y > 880 && y < 1000);
+  const boatIndex = translations.findIndex(entry => !entry.coin && entry[0] > 315 && entry[0] < 370 && entry[1] > 840 && entry[1] < 860);
+  const obstacleIndex = translations.findIndex(entry => !entry.coin && entry[0] > 175 && entry[0] < 230 && entry[1] > 880 && entry[1] < 1000);
   if (boatIndex >= 0 && obstacleIndex >= 0) {
     assert(boatIndex < obstacleIndex, 'a foreground obstacle should be drawn over the boat');
     foregroundOrderSeen = true;
@@ -302,7 +303,7 @@ sandbox.document.hidden = false;
 sandboxMath.random = () => 0.2;
 const source = fs.readFileSync('app/src/main/assets/game.js', 'utf8');
 const inspectedSource = source.replace('  requestAnimationFrame(frame);\n})();',
-  '  window.__inspectObstacles = () => obstacles;\n  window.__inspectGame = () => ({ lives, shieldTimer, stageIndex, runDistance });\n  window.__setLivesForTest = value => { lives = value; updateHud(); };\n  window.__setBoatCenterForTest = () => { boat.x = width / 2; boat.vx = 0; };\n  requestAnimationFrame(frame);\n})();');
+  '  window.__inspectObstacles = () => obstacles;\n  window.__inspectGame = () => ({ lives, shieldTimer, stageIndex, runDistance });\n  window.__setLivesForTest = value => { lives = value; updateHud(); };\n  window.__setBoatCenterForTest = () => { boat.x = width / 2; boat.vx = 0; };\n  window.__addCoinAtBoatForTest = () => { collectibles.push({ x: boat.x, y: boat.y, phase: 0 }); };\n  window.__finishForTest = finish;\n  requestAnimationFrame(frame);\n})();');
 assert.notEqual(inspectedSource, source, 'the smoke test should inspect the active obstacle list');
 vm.runInNewContext(inspectedSource, sandbox);
 events.get('play:click')();
@@ -369,6 +370,23 @@ for (let time = 136000; time < 145000; time += 50) {
 }
 assert(rewardSeen, 'the healing stage boundary should be reached');
 assert(shieldBlocked, 'an obstacle should contact the shield in the test');
+
+// Floating coins are optional pickups, paid once with the usual end-of-run event.
+vm.runInNewContext(inspectedSource, sandbox);
+events.get('play:click')();
+const eventsBeforePickupRun = JSON.parse(storage.get('rio-aventura-economy-v1')).events.length;
+sandbox.window.__addCoinAtBoatForTest();
+nextFrame(146000);
+assert(elements.get('coinHud').textContent.includes('viaje +3'), 'a collected coin should show its run bonus');
+nextFrame(146050);
+assert(elements.get('coinHud').textContent.includes('viaje +3'), 'the same coin must not be collected twice');
+sandbox.window.__finishForTest();
+const pickupEconomy = JSON.parse(storage.get('rio-aventura-economy-v1'));
+assert.equal(pickupEconomy.events.length, eventsBeforePickupRun + 1, 'pickup run should create one wallet event');
+assert.equal(pickupEconomy.events.at(-1).amount, 3, 'a collected coin should add three coins to the completed run');
+nextFrame(146050);
+assert.equal(JSON.parse(storage.get('rio-aventura-economy-v1')).events.length, eventsBeforePickupRun + 1,
+  'a finished pickup run must not grant the reward twice');
 
 // Damaged stored economy is never silently replaced by an empty wallet.
 const savedEconomy = storage.get('rio-aventura-economy-v1');
