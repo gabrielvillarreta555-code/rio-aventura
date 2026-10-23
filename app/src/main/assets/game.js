@@ -188,6 +188,11 @@
   let gfxGood = 0;
   let gfxBad = 0;
   let gfxProbe = 0;
+  // Cada cambio de resolución reconstruye lienzos y cuesta un tirón: la primera medición es rápida
+  // (un teléfono lento no sufre 4 s a máxima calidad) y las subidas a prueba se limitan por sesión.
+  let gfxFirst = true;
+  let gfxProbes = 0;
+  const gfxMaxProbes = 2;
   const scene = { height: 800, cameraX: 0, riverSpeed: 0, stageIndex: 0, theme: 'free', remaining: -1, quality: 'high', state: 'ready',
     boat: null, boatStyle: boats[0], immunity: 0, shieldTimer: 0, impact: 0, obstacles: [], collectibles: [], particles: [] };
   let fpsWindowStart = 0;
@@ -833,6 +838,7 @@
     openMapButton.classList.toggle('hidden', mode === 'sea' || Boolean(interrupted) || state === 'paused');
     exploreSeaButton.classList.toggle('hidden', mode === 'sea' || Boolean(interrupted) || state === 'paused');
     exitSeaButton.classList.toggle('hidden', mode !== 'sea');
+    if (mode === 'sea') seaControls(false);
     overlay.classList.remove('hidden');
   }
 
@@ -1351,8 +1357,9 @@
     gfxEma += (interval - gfxEma) * 0.08;
     gfxRefresh = Math.max(6, Math.min(gfxRefresh, interval));
     gfxClock += interval;
-    if (gfxClock < 1500) return;
+    if (gfxClock < (gfxFirst ? 700 : 1500)) return;
     gfxClock = 0;
+    gfxFirst = false;
     const budget = Math.max(gfxRefresh, 16.7);
     const slow = gfxEma > Math.max(budget * 1.3, 20);
     const severe = gfxEma > budget * 2.2;
@@ -1368,7 +1375,8 @@
     } else if ((gfxBad >= 2 || (severe && gfxBad >= 1)) && gfxTier > 0) {
       if (gfxProbe > 0) gfxCeiling = Math.min(gfxCeiling, gfxTier - 1);
       setGraphicsTier(gfxTier - (severe ? 2 : 1));
-    } else if (gfxGood >= 6 && gfxTier < gfxCeiling) {
+    } else if (gfxGood >= 12 && gfxTier < gfxCeiling && gfxProbes < gfxMaxProbes) {
+      gfxProbes++;
       gfxProbe = 3;
       setGraphicsTier(gfxTier + 1);
     }
@@ -1447,6 +1455,7 @@
     if (settingsReturnState === 'playing') {
       state = 'playing';
       pause.textContent = 'Ⅱ';
+      if (mode === 'sea') seaControls(true);
     }
     settingsReturnState = null;
   }
@@ -1630,17 +1639,29 @@
     return { x: saved.x, y: saved.y, h: saved.h, trip, taken: trip.id === saved.id ? ids(saved.taken, seaWorld.coins.length) : [] };
   }
 
+  let seaSavedText = '';
   function persistSea() {
     if (!seaBoat || !seaTrip) return false;
-    return saveObject(seaKey, { version: 1, x: Math.round(seaBoat.x * 10) / 10, y: Math.round(seaBoat.y * 10) / 10,
+    const snapshot = { version: 1, x: Math.round(seaBoat.x * 10) / 10, y: Math.round(seaBoat.y * 10) / 10,
       h: Math.round(seaBoat.heading * 1000) / 1000, id: seaTrip.id, dist: Math.round(seaTrip.dist * 10) / 10,
       pickups: seaTrip.pickups, score: seaTrip.score, elapsed: Math.round(seaTrip.elapsed * 10) / 10,
-      passed: [...seaTrip.passed], taken: seaTaken.flatMap((value, id) => value ? [id] : []) });
+      passed: [...seaTrip.passed], taken: seaTaken.flatMap((value, id) => value ? [id] : []) };
+    // Parado no hay nada nuevo que escribir: se evita tocar el almacenamiento (es síncrono en WebView).
+    const text = JSON.stringify(snapshot);
+    if (text === seaSavedText) return true;
+    if (!saveObject(seaKey, snapshot)) return false;
+    seaSavedText = text;
+    return true;
+  }
+
+  // Minimapa y freno solo se ven mientras se navega (no sobre la pausa ni la pantalla del muelle).
+  function seaControls(on) {
+    seaMapCanvas.classList.toggle('hidden', !on);
+    brakeButton.classList.toggle('hidden', !on);
   }
 
   function seaSetUi(on) {
-    seaMapCanvas.classList.toggle('hidden', !on);
-    brakeButton.classList.toggle('hidden', !on);
+    seaControls(on);
     if (!on) { seaHint.classList.add('hidden'); joyBase.classList.add('hidden'); }
     hintEl.textContent = on ? 'Arrastra para navegar · FRENO para parar' : '← Mantén pulsado para remar →';
     stageToast.classList.add('hidden');
@@ -1672,7 +1693,9 @@
     for (let i = 0; i < 24; i++) seaWake.push({ x: 0, y: 0, age: 1, life: 1, size: 1 });
     seaInput.x = 0; seaInput.y = 0; seaInput.brake = false;
     seaDockWait = 0;
-    seaCooldown = '';
+    // Si se reabre la partida dentro de la zona de un muelle, no se vuelve a atracar hasta salir de ella.
+    const startDock = sea.dockAt(seaWorld, seaBoat);
+    seaCooldown = startDock ? startDock.id : '';
     seaSaveIn = 3;
     seaHudAt = 0;
     refreshSeaStatus();
@@ -1703,6 +1726,7 @@
 
   function resumeSea() {
     state = 'playing';
+    seaControls(true);
     seaDockWait = 0;
     overlay.classList.add('hidden');
     pause.textContent = 'Ⅱ';
@@ -1821,8 +1845,11 @@
     const isPort = dock.kind === 'port';
     const meters = Math.floor(seaTrip.dist);
     const nothing = seaTrip.dist < 15 && seaTrip.pickups === 0 && seaTrip.score === 0;
-    if (isPort && nothing) {
-      showOverlay('⚓ Puerto<br>Palmar', 'Estás en casa. Elige un rumbo, recoge monedas y atraca en un muelle para cobrar el viaje y descubrir lugares.', 'Seguir explorando');
+    if (nothing) {
+      // Sin haber navegado no hay viaje que cobrar: volver a un muelle no da monedas gratis.
+      showOverlay(isPort ? '⚓ Puerto<br>Palmar' : dock.name,
+        isPort ? 'Estás en casa. Elige un rumbo, recoge monedas y atraca en un muelle para cobrar el viaje y descubrir lugares.'
+          : 'Ya estás en este muelle. Navega, recoge monedas y vuelve a atracar para cobrar el viaje.', 'Seguir explorando');
       persistSea();
       return;
     }
@@ -2082,6 +2109,7 @@
     if (mode === 'sea') {
       if (state === 'paused') {
         state = 'playing';
+        seaControls(true);
         overlay.classList.add('hidden');
         pause.textContent = 'Ⅱ';
       } else resumeSea();

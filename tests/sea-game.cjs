@@ -138,6 +138,7 @@ test('llegar al muelle de la aldea lo descubre, paga una vez y abre las rutas nu
   press(game, 'ArrowRight', false);
   assert.equal(game.api().state(), 'arrived', 'al llegar físicamente al muelle se atraca');
   assert(!game.hidden('overlay'));
+  assert(game.hidden('seaBrake') && game.hidden('seaMap'), 'sin controles sobre la pantalla del muelle');
   assert.match(game.html('title'), /Aldea Coral/);
   assert(!game.hidden('arrivalCard'), 'tarjeta de descubrimiento');
   assert.match(game.text('arrivalText'), /\+20/);
@@ -152,6 +153,7 @@ test('llegar al muelle de la aldea lo descubre, paga una vez y abre las rutas nu
   // Seguir explorando sale del muelle sin volver a atracar enseguida.
   game.click('play');
   assert.equal(game.api().state(), 'playing');
+  assert(!game.hidden('seaBrake') && !game.hidden('seaMap'), 'los controles vuelven');
   game.tick(30, 16);
   assert.equal(game.api().state(), 'playing', 'no re-atraca mientras sigue en la zona');
 });
@@ -202,6 +204,9 @@ test('la laguna pide descubrir las ruinas y el rango Navegante, y se abre al cum
   game.sail('ruinas'); game.arrive(20);
   game.click('exploreSea');
   assert.equal(game.api().seaStatus().laguna, 'open');
+  game.api().seaPlace(dock.x, dock.y + 300, 0);
+  game.tick(3, 16);
+  game.api().seaTrip().dist = 300;
   game.api().seaPlace(dock.x, dock.y, 0);
   game.tick(60, 16);
   assert.equal(game.api().state(), 'arrived');
@@ -213,6 +218,7 @@ test('atracar de nuevo en un destino ya descubierto solo paga el viaje, no el de
   const game = explore({ store });
   const dock = dockOf(game, 'aldea');
   const drop = () => { game.api().seaPlace(dock.x - 40, dock.y, Math.PI / 2); game.tick(60, 16); };
+  game.api().seaTrip().dist = 300;
   game.api().seaPlace(dock.x, dock.y, 0); game.tick(60, 16);
   assert.equal(game.api().state(), 'arrived');
   game.click('play');
@@ -403,6 +409,47 @@ test('en calidad reducida y sin lienzos ocultos el mundo libre también se dibuj
   low.click('closeSettings');
   low.tick(60, 16);
   assert.equal(low.api().mode(), 'sea');
+});
+
+test('reabrir la partida dentro de la zona de un muelle no atraca, y atracar sin navegar no da monedas', () => {
+  const store = makeStore();
+  const game = explore({ store });
+  const dock = dockOf(game, 'aldea');
+  game.api().seaTrip().dist = 300;
+  game.api().seaPlace(dock.x, dock.y, 0);
+  game.tick(60, 16);
+  assert.equal(game.api().state(), 'arrived');
+  const events = store.json(keys.economy).events.length;
+  const again = launch({ store });
+  again.click('exploreSea');
+  again.tick(60, 16);
+  assert.equal(again.api().state(), 'playing', 'no re-atraca al reabrir');
+  assert.equal(store.json(keys.economy).events.length, events);
+  // Salir y volver a entrar en la zona sin haber navegado: se muestra el muelle pero no se paga.
+  again.api().seaPlace(dock.x, dock.y + 250, 0);
+  again.tick(5, 16);
+  again.api().seaPlace(dock.x, dock.y, 0);
+  again.tick(60, 16);
+  assert.equal(again.api().state(), 'arrived');
+  assert.equal(store.json(keys.economy).events.length, events, 'sin viaje no hay cobro');
+});
+
+test('calidad automática: en un teléfono lento baja en el primer segundo; en uno rápido no sube y baja sin parar', () => {
+  const slow = explore();
+  const before = slow.api().tier();
+  slow.tick(30, 50);
+  assert(slow.api().tier() < before, 'baja pronto');
+  assert(slow.api().tier() <= before - 1);
+  const fast = explore({ pixelRatio: 2 });
+  let changes = 0;
+  const original = fast.store.api.setItem;
+  fast.store.api.setItem = (key, value) => { if (key === 'rio-aventura-gfx-v1') changes++; return original(key, value); };
+  press(fast, 'ArrowUp');
+  for (let i = 0; i < 60 * 150; i++) {
+    fast.tick(1, 16);
+    if (i % 600 === 0) { fast.api().seaPlace(fast.api().seaWorld().spawn.x, fast.api().seaWorld().spawn.y, 0); }
+  }
+  assert(changes <= 8, `pocos cambios de resolución (${changes}): cada uno es un tirón`);
 });
 
 console.log(`Sea game tests passed (${passed})`);
