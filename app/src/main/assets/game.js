@@ -9,6 +9,10 @@
   const pause = document.getElementById('pause');
   const scoreEl = document.getElementById('score');
   const livesEl = document.getElementById('lives');
+  const stageLabel = document.getElementById('stageLabel');
+  const stageDistance = document.getElementById('stageDistance');
+  const stageProgress = document.getElementById('stageProgress');
+  const stageToast = document.getElementById('stageToast');
   const playerTag = document.getElementById('playerTag');
   const settingsButton = document.getElementById('settings');
   const openingSettings = document.getElementById('openingSettings');
@@ -32,11 +36,20 @@
   const statsKey = 'rio-aventura-stats-v2';
   const backupFormat = 'rio-aventura-progress-v1';
   const avatars = ['🚤', '🧒', '🐬', '🌊'];
+  const stages = [
+    { start: 0, name: 'Orillas tranquilas', water: ['#18566c', '#2a9caa', '#64c8c2'], driftChance: 0 },
+    { start: 100, name: 'Troncos a la deriva', water: ['#145466', '#238c9d', '#4db6ae'], driftChance: 0.32 },
+    { start: 230, name: 'Corriente rápida', water: ['#123d61', '#257b9f', '#48a7b5'], driftChance: 0.42 },
+    { start: 400, name: 'Río bravo', water: ['#122d56', '#286888', '#3e94a4'], driftChance: 0.5 }
+  ];
   const profile = readProfile();
   const stats = readStats();
   let state = 'ready';
   let boat, obstacles, particles, score, lives, elapsed, spawnIn, immunity, direction, riverSpeed;
   let runDistance = 0;
+  let stageIndex = 0;
+  let stageHudTimer = 0;
+  let stageToastTimer = 0;
   let settingsReturnState = null;
   let wakeTimer = 0;
   let impact = 0;
@@ -159,6 +172,18 @@
     if (obstacles) obstacles.forEach(item => { item.y += difference; });
   }
 
+  function updateStageHud() {
+    const current = stages[stageIndex];
+    const next = stages[stageIndex + 1];
+    stageLabel.textContent = `Tramo ${stageIndex + 1} · ${current.name}`;
+    stageDistance.textContent = next
+      ? `${Math.floor(runDistance)} / ${next.start} m`
+      : `${Math.floor(runDistance)} m · sin fin`;
+    stageProgress.style.width = next
+      ? `${Math.max(0, Math.min(100, (runDistance - current.start) / (next.start - current.start) * 100))}%`
+      : '100%';
+  }
+
   function depthAt(y) {
     return 0.62 + 0.38 * Math.max(0, Math.min(1, y / height));
   }
@@ -173,6 +198,11 @@
     particles = [];
     score = 0;
     runDistance = 0;
+    if (stageIndex !== 0) waterGradient = null;
+    stageIndex = 0;
+    stageHudTimer = 0;
+    stageToastTimer = 0;
+    stageToast.classList.add('hidden');
     lives = 3;
     elapsed = 0;
     spawnIn = 0.6;
@@ -189,6 +219,7 @@
     fpsFrames = 0;
     measuredFps = null;
     updateHud();
+    updateStageHud();
   }
 
   function updateHud() {
@@ -229,9 +260,12 @@
   }
 
   function spawn() {
-    const kind = Math.random() < 0.78 ? 'rock' : 'log';
+    const roll = Math.random();
+    const kind = roll < stages[stageIndex].driftChance ? 'drift' : roll < 0.78 ? 'rock' : 'log';
     const radius = kind === 'rock' ? 19 + Math.random() * 11 : 26;
-    obstacles.push({ x: 78 + Math.random() * (width - 156), y: -40, radius, kind, counted: false, hit: false, phase: Math.random() * Math.PI * 2 });
+    obstacles.push({ x: 78 + Math.random() * (width - 156), y: -40, radius, kind,
+      vx: kind === 'drift' ? (Math.random() < 0.5 ? -1 : 1) * (52 + stageIndex * 10) : 0,
+      counted: false, hit: false, phase: Math.random() * Math.PI * 2 });
   }
 
   function splash(x, y, count, color) {
@@ -263,9 +297,23 @@
     boat.lean += ((turnAmount * 0.20 + direction * 0.07) - boat.lean) * Math.min(1, dt * 8);
     const cameraTarget = (boat.x - width / 2) * 0.16;
     cameraX += (cameraTarget - cameraX) * Math.min(1, dt * 4);
-    const targetRiverSpeed = Math.min(390, 190 + elapsed * 3.2);
+    const targetRiverSpeed = Math.min(390, 190 + elapsed * 3.2 + stageIndex * 15);
     riverSpeed += Math.min(targetRiverSpeed - riverSpeed, 135 * dt);
     runDistance += riverSpeed * dt / 10;
+    if (stageIndex < stages.length - 1 && runDistance >= stages[stageIndex + 1].start) {
+      stageIndex++;
+      waterGradient = null;
+      stageToast.textContent = `¡Tramo ${stageIndex + 1}: ${stages[stageIndex].name}!`;
+      stageToast.classList.remove('hidden');
+      stageToastTimer = 2.4;
+      updateStageHud();
+    }
+    if (stageToastTimer > 0) {
+      stageToastTimer = Math.max(0, stageToastTimer - dt);
+      if (stageToastTimer === 0) stageToast.classList.add('hidden');
+    }
+    stageHudTimer -= dt;
+    if (stageHudTimer <= 0) { updateStageHud(); stageHudTimer = 0.2; }
     wakeTimer -= dt;
     if (wakeTimer <= 0) {
       const spray = Math.abs(turnAmount);
@@ -283,10 +331,17 @@
     spawnIn -= dt;
     if (spawnIn <= 0) {
       spawn();
-      spawnIn = Math.max(0.48, 1.1 - elapsed * 0.012) + Math.random() * 0.28;
+      spawnIn = Math.max(0.44, 1.1 - elapsed * 0.012 - stageIndex * 0.065) + Math.random() * 0.28;
     }
     for (const item of obstacles) {
       item.y += riverSpeed * dt;
+      if (item.kind === 'drift') {
+        item.x += item.vx * dt;
+        if (item.x < 84 || item.x > width - 84) {
+          item.x = Math.max(84, Math.min(width - 84, item.x));
+          item.vx = -item.vx;
+        }
+      }
       const contactRadius = item.radius * depthAt(item.y) + 23 * depthAt(boat.y);
       const separation = Math.hypot(projectedX(item.x, item.y) - projectedX(boat.x, boat.y), item.y - boat.y);
       if (!item.hit && separation < contactRadius) {
@@ -347,9 +402,9 @@
     ctx.clip();
     if (!waterGradient) {
       waterGradient = ctx.createLinearGradient(0, 0, width, height);
-      waterGradient.addColorStop(0, '#18566c');
-      waterGradient.addColorStop(0.47, '#2a9caa');
-      waterGradient.addColorStop(1, '#64c8c2');
+      waterGradient.addColorStop(0, stages[stageIndex].water[0]);
+      waterGradient.addColorStop(0.47, stages[stageIndex].water[1]);
+      waterGradient.addColorStop(1, stages[stageIndex].water[2]);
     }
     ctx.fillStyle = waterGradient;
     ctx.fillRect(0, 0, width, height);
@@ -473,7 +528,7 @@
       ctx.beginPath();
       ctx.ellipse(0, 8, 38, 16, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#764b31';
+      ctx.fillStyle = item.kind === 'drift' ? '#925b35' : '#764b31';
       ctx.fillRect(-31, -12, 62, 24);
       ctx.fillStyle = '#aa7045';
       ctx.fillRect(-31, -12, 62, 5);
@@ -483,6 +538,14 @@
       ctx.lineWidth = 2;
       for (const x of [-18, 4, 20]) {
         ctx.beginPath(); ctx.moveTo(x, -5); ctx.lineTo(x + 8, 8); ctx.stroke();
+      }
+      if (item.kind === 'drift') {
+        ctx.fillStyle = '#ffdf85';
+        ctx.beginPath();
+        ctx.moveTo(item.vx > 0 ? 20 : -20, -3);
+        ctx.lineTo(item.vx > 0 ? 13 : -13, -9);
+        ctx.lineTo(item.vx > 0 ? 13 : -13, 3);
+        ctx.closePath(); ctx.fill();
       }
     }
     ctx.restore();
