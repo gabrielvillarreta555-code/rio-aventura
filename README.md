@@ -45,6 +45,16 @@ cambie el tamaño de la pantalla. La calidad reducida dibuja como máximo unos
 En Ajustes se muestra el último FPS dibujado durante el juego para comparar
 los modos; es una medición orientativa, no una garantía de rendimiento.
 
+La versión 1.9 añade cuatro tramos dentro de la misma partida: Orillas
+tranquilas (0 m), Troncos a la deriva (100 m), Corriente rápida (230 m) y Río
+bravo (400 m en adelante). Una barra indica la distancia al siguiente tramo y
+aparece un aviso al alcanzarlo. El agua cambia de color y los obstáculos
+aparecen con mayor frecuencia; desde el segundo tramo hay troncos que se
+desplazan lateralmente y pueden rebotar en los límites del río. Siguen valiendo
+los controles, las tres vidas y las colisiones de rocas y troncos anteriores.
+Los tramos son parte de cada viaje: no son niveles desbloqueables ni se guardan
+por separado. El récord y las estadísticas locales mantienen su formato.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
