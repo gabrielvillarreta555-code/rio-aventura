@@ -33,6 +33,8 @@
     #overlay p { max-width: 280px; font-size: 17px; line-height: 1.45; color: #d8f8f6; }
     #play { margin-top: 14px; padding: 16px 32px; border: 0; border-radius: 16px; background: #ffdd79; color: #18353a; font: 800 19px system-ui, sans-serif; box-shadow: 0 8px 0 #c89e42; }
     #play:active { transform: translateY(5px); box-shadow: 0 3px 0 #c89e42; }
+    #finishTrip { margin-top: 14px; min-height: 44px; padding: 10px 20px; border: 1px solid #ffdd79aa; border-radius: 14px; background: #123f4bc9; color: #ffdd79; font: 800 16px system-ui, sans-serif; }
+    #finishTrip.hidden { display: none; }
     #openingSettings { margin-top: 20px; padding: 10px 20px; border: 1px solid #c9eeee80; border-radius: 14px; background: #123f4bc9; color: white; font: 700 16px system-ui, sans-serif; }
     #settingsPanel { position: absolute; z-index: 5; inset: 0; display: flex; justify-content: center; overflow-y: auto; padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); background: #09242cef; }
     #settingsPanel.hidden { display: none; }
@@ -93,7 +95,7 @@
     <div id="stageHud" aria-live="off"><div id="stageHudText"><span id="stageLabel">Tramo 1 · Orillas tranquilas</span><span id="stageDistance">0 / 100 m</span></div><div id="stageTrack"><div id="stageProgress"></div></div></div>
     <div id="stageToast" class="hidden" role="status" aria-live="polite"></div>
     <div id="coinHud">🪙 0</div>
-    <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><p id="message">Esquiva las rocas, recoge monedas flotantes y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="play" type="button">¡Jugar!</button><button id="openingSettings" type="button">Ajustes</button></div>
+    <div id="overlay"><div id="playerTag">🚤 Invitado</div><h1 id="title">Río<br>Aventura</h1><p id="message">Esquiva las rocas, recoge monedas flotantes y llega lo más lejos posible. Mantén pulsado a la izquierda o derecha para remar.</p><button id="play" type="button">¡Jugar!</button><button id="finishTrip" type="button" class="hidden">Cobrar y empezar de nuevo</button><button id="openingSettings" type="button">Ajustes</button></div>
     <div id="rankToast" class="hidden" role="status" aria-live="polite" aria-atomic="true"></div>
     <section id="settingsPanel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
       <div class="settingsCard">

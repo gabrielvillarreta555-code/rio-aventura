@@ -32,6 +32,7 @@
   const coinHud = document.getElementById('coinHud');
   const garageCoins = document.getElementById('garageCoins');
   const garageNotice = document.getElementById('garageNotice');
+  const finishTripButton = document.getElementById('finishTrip');
   const width = canvas.width;
   let height = canvas.height;
   const bestKey = 'rio-aventura-best-v1';
@@ -41,6 +42,23 @@
   const backupFormat = 'rio-aventura-progress-v1';
   const economyKey = 'rio-aventura-economy-v1';
   const economyBackupFormat = 'rio-aventura-progress-v2';
+  const compactBackupFormat = 'rio-aventura-progress-v3';
+  const tripKey = 'rio-aventura-trip-v1';
+  const settleKey = 'rio-aventura-settle-v1';
+  const idPattern = /^[a-zA-Z0-9_-]{1,64}$/;
+  const hashPattern = /^[0-9a-f]{16}$/;
+  const chainStart = '0000000000000000';
+  const maxCount = 100000000;
+  const maxTripReward = 80;
+  const compactAfter = 300;
+  const keepRecent = 60;
+  const maxTailEvents = 2000;
+  const maxLegacyEvents = 50000;
+  const maxMarks = 40;
+  const maxDays = 60;
+  const maxPendingRuns = 10;
+  const maxAppliedRuns = 20;
+  const tripSaveSeconds = 3;
   const monthLengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   const avatars = ['🚤', '🧒', '🐬', '🌊'];
   const boats = [
@@ -77,6 +95,12 @@
   let economyError = false;
   const economy = readEconomy();
   let state = 'ready';
+  let economyView = null;
+  let tripId = null;
+  let tripSaveIn = tripSaveSeconds;
+  let hudReward = -1;
+  let interrupted = null;
+  let runSerial = 0;
   let boat, obstacles, collectibles, particles, score, lives, elapsed, spawnIn, coinSpawnIn, immunity, shieldTimer, direction, riverSpeed;
   let collectedCoins = 0;
   let runDistance = 0;
@@ -139,7 +163,35 @@
       nextEvent: 1, events: [], selected: 'classic' };
   }
 
-  function replayEconomy(events) {
+  function validRunId(value) {
+    return typeof value === 'string' && idPattern.test(value);
+  }
+
+  function validRunList(list) {
+    return Array.isArray(list) && list.length <= maxAppliedRuns && list.every(validRunId) && new Set(list).size === list.length;
+  }
+
+  function newRunId() {
+    runSerial = (runSerial + 1) % 1679616;
+    return `r${Date.now().toString(36)}${stats.runs.toString(36)}${economy.nextEvent.toString(36)}${runSerial.toString(36)}${Math.floor(Math.random() * 1000000).toString(36)}`;
+  }
+
+  // Hash encadenado para comparar historiales sin conservar todos sus eventos.
+  function chainHash(previous, event) {
+    const text = `${previous}|${JSON.stringify(event)}`;
+    let h1 = 0xdeadbeef;
+    let h2 = 0x41c6ce57;
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      h1 = Math.imul(h1 ^ code, 2654435761);
+      h2 = Math.imul(h2 ^ code, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
+  }
+
+  function replayEconomy(events, base = null) {
     const owned = new Set(['classic']);
     const earnedRanks = new Set();
     const dailyProgress = new Map();
@@ -147,8 +199,16 @@
     const seen = new Set();
     let lastDay = '';
     let coins = 0;
+    if (base) {
+      coins = base.coins;
+      lastDay = base.lastDay;
+      for (const id of base.owned) owned.add(id);
+      for (const id of base.ranks) earnedRanks.add(id);
+      for (const key of base.claimed) claimedMissions.add(key);
+      for (const day of Object.keys(base.daily)) dailyProgress.set(day, { ...base.daily[day] });
+    }
     for (const event of events) {
-      if (!event || typeof event.id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(event.id) || seen.has(event.id)) return null;
+      if (!event || typeof event.id !== 'string' || !idPattern.test(event.id) || seen.has(event.id)) return null;
       seen.add(event.id);
       if (event.type === 'earn' && Number.isInteger(event.amount) && event.amount >= 1 && event.amount <= 80) {
         const hasRank = Object.prototype.hasOwnProperty.call(event, 'rank');
@@ -162,9 +222,9 @@
           earnedRanks.add(rank.id);
         } else if (hasRun) {
           const run = event.run;
-          if (!run || !validDayKey(run.day) ||
+          if (!run || !validDayKey(run.day) || (run.id !== undefined && !validRunId(run.id)) ||
               ![run.distance, run.dodged, run.pickups].every(value =>
-                Number.isInteger(value) && value >= 0 && value <= 100000000)) return null;
+                Number.isInteger(value) && value >= 0 && value <= maxCount)) return null;
           const progress = dailyProgress.get(run.day) || { distance: 0, dodged: 0, pickups: 0 };
           progress.distance += run.distance;
           progress.dodged += run.dodged;
@@ -181,7 +241,7 @@
           if (event.dailyDay > lastDay) lastDay = event.dailyDay;
         }
         coins += event.amount;
-        if (coins > 100000000) return null;
+        if (coins > maxCount) return null;
       } else if (event.type === 'buy') {
         const boatOption = boats.find(item => item.id === event.boat);
         if (!boatOption || boatOption.price === 0 || event.amount !== boatOption.price ||
@@ -196,15 +256,124 @@
     return { coins, owned, earnedRanks, dailyProgress, claimedMissions, lastDay };
   }
 
+  function validateBase(base) {
+    const count = value => Number.isInteger(value) && value >= 0 && value <= maxCount;
+    const unique = list => new Set(list).size === list.length;
+    const missionIds = dailyMissions.map(item => item.id);
+    if (!base || typeof base !== 'object' || !count(base.count) || base.count < 1 || !count(base.coins) ||
+        typeof base.hash !== 'string' || !hashPattern.test(base.hash) ||
+        !Array.isArray(base.marks) || base.marks.length > maxMarks ||
+        !base.marks.every(mark => mark && count(mark.count) && typeof mark.hash === 'string' && hashPattern.test(mark.hash)) ||
+        !Array.isArray(base.owned) || !unique(base.owned) ||
+        !base.owned.every(id => boats.some(item => item.id === id && item.price > 0)) ||
+        !Array.isArray(base.ranks) || !unique(base.ranks) || !base.ranks.every(id => ranks.some(item => item.id === id)) ||
+        (base.lastDay !== '' && !validDayKey(base.lastDay)) ||
+        !base.daily || typeof base.daily !== 'object' || Array.isArray(base.daily)) return null;
+    const days = Object.keys(base.daily);
+    if (days.length > maxDays || !days.every(day => validDayKey(day) && base.daily[day] &&
+        ['distance', 'dodged', 'pickups'].every(key => count(base.daily[day][key])))) return null;
+    if (!Array.isArray(base.claimed) || !unique(base.claimed) || base.claimed.length > maxDays * missionIds.length ||
+        !base.claimed.every(key => typeof key === 'string' && days.includes(key.slice(0, 10)) &&
+          missionIds.includes(key.slice(11)) && key[10] === ':')) return null;
+    const daily = {};
+    for (const day of days) {
+      const counts = base.daily[day];
+      daily[day] = { distance: counts.distance, dodged: counts.dodged, pickups: counts.pickups };
+    }
+    return { count: base.count, hash: base.hash, marks: base.marks.map(mark => ({ count: mark.count, hash: mark.hash })),
+      coins: base.coins, owned: [...base.owned], ranks: [...base.ranks], lastDay: base.lastDay, daily, claimed: [...base.claimed] };
+  }
+
   function validateEconomy(value) {
-    if (!value || value.version !== 1 || typeof value.deviceId !== 'string' ||
-        !/^[a-zA-Z0-9_-]{1,64}$/.test(value.deviceId) ||
-        !Number.isInteger(value.nextEvent) || value.nextEvent < 1 ||
-        !Array.isArray(value.events) || value.events.length > 10000) return null;
-    const view = replayEconomy(value.events);
+    if (!value || (value.version !== 1 && value.version !== 2) || typeof value.deviceId !== 'string' ||
+        !idPattern.test(value.deviceId) || !Number.isInteger(value.nextEvent) || value.nextEvent < 1 ||
+        !Array.isArray(value.events) || (value.appliedRuns !== undefined && !validRunList(value.appliedRuns))) return null;
+    let base = null;
+    if (value.version === 2) {
+      base = validateBase(value.base);
+      if (!base || value.events.length > maxTailEvents) return null;
+    } else if (value.base !== undefined || value.events.length > maxLegacyEvents) return null;
+    const view = replayEconomy(value.events, base);
     if (!view || !view.owned.has(value.selected)) return null;
-    return { version: 1, deviceId: value.deviceId, nextEvent: value.nextEvent,
+    const clean = { version: value.version, deviceId: value.deviceId, nextEvent: value.nextEvent,
       events: value.events, selected: value.selected };
+    if (base) clean.base = base;
+    if (value.appliedRuns !== undefined) clean.appliedRuns = [...value.appliedRuns];
+    return clean;
+  }
+
+  function sameEconomyState(a, b) {
+    if (a.coins !== b.coins || a.lastDay !== b.lastDay || a.owned.size !== b.owned.size ||
+        a.earnedRanks.size !== b.earnedRanks.size) return false;
+    for (const id of a.owned) if (!b.owned.has(id)) return false;
+    for (const id of a.earnedRanks) if (!b.earnedRanks.has(id)) return false;
+    if (JSON.stringify(a.dailyProgress.get(a.lastDay) || null) !== JSON.stringify(b.dailyProgress.get(b.lastDay) || null)) return false;
+    return dailyMissions.every(mission =>
+      a.claimedMissions.has(`${a.lastDay}:${mission.id}`) === b.claimedMissions.has(`${b.lastDay}:${mission.id}`));
+  }
+
+  // Resume los eventos antiguos en un saldo y conserva solo los recientes. Nunca compacta
+  // si el estado resultante no es idéntico al del historial completo.
+  function compactEconomy(value) {
+    if (value.events.length <= compactAfter) return value;
+    const base = value.base || null;
+    const cut = value.events.length - keepRecent;
+    const head = value.events.slice(0, cut);
+    const summary = replayEconomy(head, base);
+    const before = replayEconomy(value.events, base);
+    if (!summary || !before) return value;
+    let hash = base ? base.hash : chainStart;
+    for (const event of head) hash = chainHash(hash, event);
+    const count = (base ? base.count : 0) + head.length;
+    const recentDays = [...summary.dailyProgress.keys()].sort().slice(-maxDays);
+    const daily = {};
+    for (const day of recentDays) {
+      const counts = summary.dailyProgress.get(day);
+      daily[day] = { distance: counts.distance, dodged: counts.dodged, pickups: counts.pickups };
+    }
+    const candidate = { ...value, version: 2, events: value.events.slice(cut), base: {
+      count, hash, marks: [...(base ? base.marks : []), { count, hash }].slice(-maxMarks),
+      coins: summary.coins,
+      owned: boats.filter(item => item.price > 0 && summary.owned.has(item.id)).map(item => item.id),
+      ranks: ranks.filter(item => summary.earnedRanks.has(item.id)).map(item => item.id),
+      lastDay: summary.lastDay, daily,
+      claimed: [...summary.claimedMissions].filter(key => recentDays.includes(key.slice(0, 10)))
+    } };
+    const after = validateEconomy(candidate);
+    const afterView = after && replayEconomy(after.events, after.base);
+    return afterView && sameEconomyState(before, afterView) ? after : value;
+  }
+
+  function economyChain(value) {
+    let hash = value.base ? value.base.hash : chainStart;
+    let count = value.base ? value.base.count : 0;
+    for (const event of value.events) {
+      hash = chainHash(hash, event);
+      count++;
+    }
+    return { count, hash };
+  }
+
+  function economyHashAt(value, target) {
+    if (target === 0) return chainStart;
+    let count = value.base ? value.base.count : 0;
+    let hash = value.base ? value.base.hash : chainStart;
+    if (target === count) return hash;
+    if (target < count) {
+      const mark = value.base.marks.find(item => item.count === target);
+      return mark ? mark.hash : null;
+    }
+    for (const event of value.events) {
+      hash = chainHash(hash, event);
+      if (++count === target) return hash;
+    }
+    return null;
+  }
+
+  // Verdadero si el historial de `outer` empieza exactamente por todo el de `inner`.
+  function economyCovers(outer, inner) {
+    const tip = economyChain(inner);
+    return economyHashAt(outer, tip.count) === tip.hash;
   }
 
   function readEconomy() {
@@ -220,8 +389,12 @@
   }
 
   function saveEconomy(next, allowRecovery = false) {
-    if ((economyError && !allowRecovery) || !validateEconomy(next) || !saveObject(economyKey, next)) return false;
-    Object.assign(economy, next);
+    if (economyError && !allowRecovery) return false;
+    const compact = compactEconomy(next);
+    if (!validateEconomy(compact) || !saveObject(economyKey, compact)) return false;
+    for (const key of Object.keys(economy)) if (!(key in compact)) delete economy[key];
+    Object.assign(economy, compact);
+    economyView = null;
     economyError = false;
     updateCoinHud();
     return true;
@@ -235,12 +408,27 @@
       events: [...current.events, { id, ...event }] };
   }
 
+  function currentView() {
+    if (!economyView) economyView = replayEconomy(economy.events, economy.base || null);
+    return economyView;
+  }
+
+  function tripReward(distance, dodged, pickups) {
+    return Math.max(1, Math.min(maxTripReward, Math.floor(distance / 35) + dodged * 2 + pickups * 3));
+  }
+
   function updateCoinHud() {
-    coinHud.textContent = economyError ? '🪙 !' : `🪙 ${replayEconomy(economy.events).coins}${state === 'playing' ? ` · viaje +${collectedCoins * 3}` : ''}`;
+    if (economyError) {
+      coinHud.textContent = '🪙 !';
+      return;
+    }
+    hudReward = state === 'playing' ? tripReward(runDistance, score, collectedCoins) : -1;
+    const tripText = hudReward < 0 ? '' : ` · viaje +${hudReward}${hudReward >= maxTripReward ? ' (máx.)' : ''}`;
+    coinHud.textContent = `🪙 ${currentView().coins}${tripText}`;
   }
 
   function updateGarageView() {
-    const { coins, owned } = replayEconomy(economy.events);
+    const { coins, owned } = currentView();
     garageCoins.textContent = `${coins} monedas`;
     for (const boatOption of boats) {
       const button = document.getElementById(`boat-${boatOption.id}`);
@@ -256,7 +444,7 @@
   }
 
   function updateRankView() {
-    const earnedRanks = economyError ? new Set() : replayEconomy(economy.events).earnedRanks;
+    const earnedRanks = economyError ? new Set() : currentView().earnedRanks;
     const next = ranks.find(rank => !earnedRanks.has(rank.id));
     const rankProgressText = document.getElementById('rankProgressText');
     const rankProgressFill = document.getElementById('rankProgressFill');
@@ -294,7 +482,7 @@
       dateLabel.textContent = 'Restaura el progreso para ver las misiones.';
       return;
     }
-    const view = replayEconomy(economy.events);
+    const view = currentView();
     const today = localDayKey();
     const day = view.lastDay > today ? view.lastDay : today;
     dateLabel.textContent = view.lastDay > today
@@ -334,24 +522,25 @@
       const legacy = readObject(legacyStatsKey);
       return {
         runs: safeCount(legacy.runs), dodged: 0,
-        distance: safeCount(legacy.distance), legacyDodged: safeCount(legacy.dodged)
+        distance: safeCount(legacy.distance), legacyDodged: safeCount(legacy.dodged), appliedRuns: []
       };
     }
     return {
       runs: safeCount(saved.runs),
       dodged: safeCount(saved.dodged),
       distance: safeCount(saved.distance),
-      legacyDodged: safeCount(saved.legacyDodged)
+      legacyDodged: safeCount(saved.legacyDodged),
+      appliedRuns: validRunList(saved.appliedRuns) ? [...saved.appliedRuns] : []
     };
   }
 
-  function saveStats() {
-    return saveObject(statsKey, { version: 2, ...stats });
+  function saveStats(next = stats) {
+    return saveObject(statsKey, { version: 2, ...next });
   }
 
   function exportBackup() {
     return JSON.stringify({
-      format: economyBackupFormat,
+      format: economy.version === 2 ? compactBackupFormat : economyBackupFormat,
       profile: { ...profile },
       best: readBest(),
       stats: { ...stats },
@@ -360,10 +549,11 @@
   }
 
   function parseBackup(text) {
-    if (text.length > 1000000) return null;
+    if (text.length > 3000000) return null;
     let backup;
     try { backup = JSON.parse(text); } catch (_) { return null; }
-    if (!backup || ![backupFormat, economyBackupFormat].includes(backup.format) || !backup.profile || !backup.stats) return null;
+    if (!backup || ![backupFormat, economyBackupFormat, compactBackupFormat].includes(backup.format) ||
+        !backup.profile || !backup.stats) return null;
     const { name, avatar, quality } = backup.profile;
     if (typeof name !== 'string' || !name.trim() || name.length > 18 ||
         !Number.isInteger(avatar) || avatar < 0 || avatar >= avatars.length ||
@@ -371,7 +561,11 @@
     const values = [backup.best, backup.stats.runs, backup.stats.dodged,
       backup.stats.distance, backup.stats.legacyDodged];
     if (!values.every(value => Number.isInteger(value) && value >= 0 && value <= 100000000)) return null;
-    if (backup.format === economyBackupFormat && !validateEconomy(backup.economy)) return null;
+    if (backup.format !== backupFormat) {
+      const normalized = validateEconomy(backup.economy);
+      if (!normalized) return null;
+      backup.economy = normalized;
+    }
     return backup;
   }
 
@@ -394,7 +588,7 @@
   }
 
   function updateProfileBadge() {
-    const earnedRanks = economyError ? new Set() : replayEconomy(economy.events).earnedRanks;
+    const earnedRanks = economyError ? new Set() : currentView().earnedRanks;
     let highest = null;
     for (const rank of ranks) if (earnedRanks.has(rank.id)) highest = rank;
     playerTag.textContent = `${avatars[profile.avatar]} ${profile.name}${highest ? ` · ${highest.badge} ${highest.name}` : ''}`;
@@ -481,14 +675,21 @@
     title.innerHTML = heading;
     message.textContent = body;
     play.textContent = button;
+    if (interrupted) finishTripButton.classList.remove('hidden');
+    else finishTripButton.classList.add('hidden');
     overlay.classList.remove('hidden');
   }
 
   function begin() {
+    settlePending();
+    interrupted = null;
     reset();
+    tripId = newRunId();
+    tripSaveIn = tripSaveSeconds;
     state = 'playing';
     updateCoinHud();
     pause.textContent = 'Ⅱ';
+    finishTripButton.classList.add('hidden');
     overlay.classList.add('hidden');
   }
 
@@ -497,52 +698,222 @@
     direction = 0;
     activePointerId = null;
     boat.vx = 0;
-    const best = Math.max(score, readBest());
-    let savedBest = false;
-    try { localStorage.setItem(bestKey, String(best)); savedBest = true; }
-    catch (_) { /* Session can still finish. */ }
-    const achievementsBefore = new Set(achievements.filter(item => stats[item.metric] >= item.target).map(item => item.id));
-    stats.runs = Math.min(100000000, stats.runs + 1);
-    stats.dodged = Math.min(100000000, stats.dodged + score);
-    stats.distance = Math.min(100000000, stats.distance + Math.round(runDistance));
-    const savedStats = saveStats();
-    const newAchievements = savedStats
-      ? achievements.filter(item => !achievementsBefore.has(item.id) && stats[item.metric] >= item.target)
-      : [];
-    const earned = Math.max(1, Math.min(80, Math.floor(runDistance / 35) + score * 2 + collectedCoins * 3));
-    const currentEconomy = replayEconomy(economy.events);
-    const today = localDayKey();
-    const missionDay = currentEconomy.lastDay > today ? currentEconomy.lastDay : today;
-    let nextEconomy = economyWithEvent({ type: 'earn', amount: earned,
-      run: { day: missionDay, distance: safeCount(Math.round(runDistance)), dodged: score, pickups: collectedCoins } });
-    const earnedRanks = currentEconomy.earnedRanks;
-    const newRanks = savedStats && !economyError
-      ? ranks.filter(rank => stats.distance >= rank.distance && stats.dodged >= rank.dodged && !earnedRanks.has(rank.id))
-      : [];
-    for (const rank of newRanks) nextEconomy = economyWithEvent({ type: 'earn', rank: rank.id, amount: rank.reward }, nextEconomy);
-    const missionView = replayEconomy(nextEconomy.events);
-    const dailyCounts = missionView.dailyProgress.get(missionDay);
-    const newMissions = !economyError ? dailyMissions.filter(mission =>
-      dailyCounts[mission.metric] >= mission.target &&
-      !missionView.claimedMissions.has(`${missionDay}:${mission.id}`)) : [];
-    for (const mission of newMissions) nextEconomy = economyWithEvent({ type: 'earn', amount: mission.reward,
-      dailyDay: missionDay, dailyMission: mission.id }, nextEconomy);
-    const savedCoins = saveEconomy(nextEconomy);
-    updateCoinHud();
-    updateProfileBadge();
-    const rankReward = newRanks.reduce((sum, rank) => sum + rank.reward, 0);
-    const rankMessage = savedCoins && newRanks.length ? ` ¡Nuevo rango: ${newRanks[newRanks.length - 1].name}! Premio extra: ${rankReward} monedas.` : '';
-    const dailyMessage = savedCoins && newMissions.length ? ` Misiones diarias: +${newMissions.reduce((sum, mission) => sum + mission.reward, 0)} monedas.` : '';
-    const achievementMessage = newAchievements.length ? ` Nuevo logro: ${newAchievements.map(item => item.name).join(', ')}.` : '';
+    const run = { id: tripId || newRunId(), score, lives, pickups: collectedCoins,
+      distance: Math.floor(runDistance * 10) / 10, elapsed: Math.round(elapsed * 10) / 10 };
+    const result = settlePending(run).get(run.id);
+    if (result.complete || readPendingRuns().some(item => item.id === run.id)) clearStorageKey(tripKey);
+    const rankReward = result.newRanks.reduce((sum, rank) => sum + rank.reward, 0);
+    const rankMessage = result.newRanks.length
+      ? ` ¡Nuevo rango: ${result.newRanks[result.newRanks.length - 1].name}! Premio extra: ${rankReward} monedas.` : '';
+    const dailyMessage = result.newMissions.length
+      ? ` Misiones diarias: +${result.newMissions.reduce((sum, mission) => sum + mission.reward, 0)} monedas.` : '';
+    const achievementMessage = result.newAchievements.length
+      ? ` Nuevo logro: ${result.newAchievements.map(item => item.name).join(', ')}.` : '';
+    const coinMessage = result.economySaved ? `ganaste ${result.earned} monedas de viaje` : `tienes ${result.earned} monedas de viaje pendientes`;
+    const warning = result.complete ? ''
+      : economyError ? ' No se pueden guardar las monedas: restaura una copia en Ajustes y este viaje se completará.'
+      : ' No se pudo guardar todo el progreso. Se reintentará al empezar otro viaje; no desinstales la app.';
     showOverlay('¡Fin del<br>viaje!',
-      `Lograste ${score} puntos, recogiste ${collectedCoins} monedas flotantes y ganaste ${savedCoins ? earned : 0} monedas de viaje. Tu récord es ${best}.${rankMessage}${dailyMessage}${achievementMessage}${savedBest && savedStats && savedCoins ? '' : ' No se pudo guardar todo el progreso.'}`,
+      `Lograste ${score} puntos, recogiste ${collectedCoins} monedas flotantes y ${coinMessage}. Tu récord es ${result.best}.${rankMessage}${dailyMessage}${achievementMessage}${warning}`,
       'Jugar otra vez');
-    if (savedCoins && newRanks.length) {
-      const highest = newRanks[newRanks.length - 1];
-      rankToast.textContent = `${highest.badge} ¡Nuevo rango: ${highest.name}! Premio +${rankReward} monedas`;
-      rankToast.classList.remove('hidden');
-      rankToastTimer = 3;
+    showRankToast(result.newRanks);
+  }
+
+  function showRankToast(newRanks) {
+    if (!newRanks.length) return;
+    const highest = newRanks[newRanks.length - 1];
+    const reward = newRanks.reduce((sum, rank) => sum + rank.reward, 0);
+    rankToast.textContent = `${highest.badge} ¡Nuevo rango: ${highest.name}! Premio +${reward} monedas`;
+    rankToast.classList.remove('hidden');
+    rankToastTimer = 3;
+  }
+
+  function resumeInterruptedTrip() {
+    if (!interrupted) return;
+    restoreTrip(interrupted);
+    tripSaveIn = tripSaveSeconds;
+    state = 'playing';
+    updateCoinHud();
+    pause.textContent = 'Ⅱ';
+    finishTripButton.classList.add('hidden');
+    overlay.classList.add('hidden');
+  }
+
+  function cashInterruptedTrip() {
+    if (!interrupted) return;
+    restoreTrip(interrupted);
+    finish();
+  }
+
+  function pauseTrip() {
+    state = 'paused';
+    direction = 0;
+    activePointerId = null;
+    boat.vx = 0;
+    heldKeys.left = false;
+    heldKeys.right = false;
+    pause.textContent = '▶';
+    showOverlay('En pausa', `Llevas ${score} puntos.`, 'Continuar');
+    persistTrip();
+  }
+
+  function intWithin(value, max) {
+    return Number.isInteger(value) && value >= 0 && value <= max;
+  }
+
+  function numberWithin(value, max) {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max;
+  }
+
+  function tripSnapshot(source) {
+    if (!source || !validRunId(source.id) || !intWithin(source.score, 1000000) || !intWithin(source.lives, 3) ||
+        !intWithin(source.pickups, 100000) || !numberWithin(source.distance, 1000000) ||
+        !numberWithin(source.elapsed, 1000000)) return null;
+    return { id: source.id, score: source.score, lives: source.lives, pickups: source.pickups,
+      distance: source.distance, elapsed: source.elapsed };
+  }
+
+  function readTrip() {
+    const saved = readObject(tripKey);
+    const trip = saved.version === 1 ? tripSnapshot(saved) : null;
+    return trip && trip.lives >= 1 ? trip : null;
+  }
+
+  function clearStorageKey(key) {
+    try { localStorage.removeItem(key); return true; }
+    catch (_) { return false; }
+  }
+
+  // Guarda el viaje en curso para poder retomarlo si Android cierra la app.
+  function persistTrip() {
+    if (!tripId || (state !== 'playing' && state !== 'paused') || lives < 1) return false;
+    return saveObject(tripKey, { version: 1, id: tripId, score, lives, pickups: collectedCoins,
+      distance: Math.round(runDistance * 10) / 10, elapsed: Math.round(elapsed * 10) / 10 });
+  }
+
+  function readPendingRuns() {
+    const saved = readObject(settleKey);
+    if (saved.version !== 1 || !Array.isArray(saved.runs)) return [];
+    return saved.runs.map(tripSnapshot).filter(Boolean).slice(0, maxPendingRuns);
+  }
+
+  function writePendingRuns(runs) {
+    return runs.length ? saveObject(settleKey, { version: 1, runs }) : clearStorageKey(settleKey);
+  }
+
+  function runIsApplied(id) {
+    return (economy.appliedRuns || []).includes(id) || stats.appliedRuns.includes(id);
+  }
+
+  // Aplica el cierre de un viaje. Cada parte (monedas, estadísticas, récord) se aplica una sola vez
+  // aunque se reintente, así que un fallo parcial nunca duplica ni pierde premios.
+  function settleRun(run) {
+    const result = { run, earned: tripReward(run.distance, run.score, run.pickups), best: Math.max(run.score, readBest()),
+      newRanks: [], newMissions: [], newAchievements: [], economySaved: true, statsSaved: true, bestSaved: true };
+    const distance = safeCount(Math.round(run.distance));
+    const statsApplied = stats.appliedRuns.includes(run.id);
+    const projected = statsApplied ? { ...stats } : {
+      runs: Math.min(maxCount, stats.runs + 1), dodged: Math.min(maxCount, stats.dodged + run.score),
+      distance: Math.min(maxCount, stats.distance + distance), legacyDodged: stats.legacyDodged,
+      appliedRuns: [...stats.appliedRuns, run.id].slice(-maxAppliedRuns) };
+    if (economyError) {
+      result.economySaved = false;
+    } else if (!(economy.appliedRuns || []).includes(run.id)) {
+      const view = currentView();
+      const today = localDayKey();
+      const day = view.lastDay > today ? view.lastDay : today;
+      let next = economyWithEvent({ type: 'earn', amount: result.earned,
+        run: { id: run.id, day, distance, dodged: run.score, pickups: run.pickups } });
+      next.appliedRuns = [...(economy.appliedRuns || []), run.id].slice(-maxAppliedRuns);
+      const newRanks = ranks.filter(rank => projected.distance >= rank.distance && projected.dodged >= rank.dodged &&
+        !view.earnedRanks.has(rank.id));
+      for (const rank of newRanks) next = economyWithEvent({ type: 'earn', rank: rank.id, amount: rank.reward }, next);
+      const counts = (replayEconomy(next.events, next.base || null) || { dailyProgress: new Map() }).dailyProgress.get(day);
+      const claimed = view.claimedMissions;
+      const newMissions = counts ? dailyMissions.filter(mission => counts[mission.metric] >= mission.target &&
+        !claimed.has(`${day}:${mission.id}`)) : [];
+      for (const mission of newMissions) next = economyWithEvent({ type: 'earn', amount: mission.reward,
+        dailyDay: day, dailyMission: mission.id }, next);
+      if (saveEconomy(next)) {
+        result.newRanks = newRanks;
+        result.newMissions = newMissions;
+      } else result.economySaved = false;
     }
+    if (!statsApplied) {
+      const before = new Set(achievements.filter(item => stats[item.metric] >= item.target).map(item => item.id));
+      if (saveStats(projected)) {
+        Object.assign(stats, projected);
+        result.newAchievements = achievements.filter(item => !before.has(item.id) && stats[item.metric] >= item.target);
+      } else result.statsSaved = false;
+    }
+    try { localStorage.setItem(bestKey, String(result.best)); }
+    catch (_) { result.bestSaved = false; }
+    result.complete = result.economySaved && result.statsSaved && result.bestSaved;
+    return result;
+  }
+
+  // Reintenta los cierres que no se pudieron completar (en orden y sin repetir ninguno).
+  function settlePending(extraRun = null) {
+    let runs = readPendingRuns();
+    if (extraRun && !runs.some(item => item.id === extraRun.id)) {
+      runs = [...runs, extraRun].slice(-maxPendingRuns);
+      writePendingRuns(runs);
+    }
+    const results = new Map();
+    const remaining = [];
+    for (const run of runs) {
+      const result = settleRun(run);
+      results.set(run.id, result);
+      if (!result.complete) remaining.push(run);
+    }
+    if (runs.length) {
+      writePendingRuns(remaining);
+      updateCoinHud();
+      updateProfileBadge();
+    }
+    return results;
+  }
+
+  function stageIndexFor(distance) {
+    let index = 0;
+    while (index < stages.length - 1 && distance >= stages[index + 1].start) index++;
+    return index;
+  }
+
+  function restoreTrip(trip) {
+    reset();
+    tripId = trip.id;
+    score = trip.score;
+    lives = Math.max(1, trip.lives);
+    collectedCoins = trip.pickups;
+    runDistance = trip.distance;
+    elapsed = trip.elapsed;
+    stageIndex = stageIndexFor(runDistance);
+    waterGradient = null;
+    riverSpeed = Math.min(390, 190 + elapsed * 3.2);
+    shieldTimer = 3;
+    spawnIn = 1.2;
+    coinSpawnIn = 2;
+    interrupted = null;
+    updateHud();
+    updateStageHud();
+  }
+
+  function offerInterruptedTrip(trip) {
+    interrupted = trip;
+    showOverlay('Viaje<br>interrumpido',
+      `Tu viaje anterior quedó guardado: ${trip.score} puntos y ${Math.floor(trip.distance)} m. Puedes continuarlo con 3 s de escudo o cobrar lo conseguido.`,
+      'Continuar viaje');
+  }
+
+  function recoverOnStartup() {
+    if (!economyError && economy.events.length > compactAfter) saveEconomy({ ...economy });
+    for (const result of settlePending().values()) showRankToast(result.newRanks);
+    const trip = readTrip();
+    if (!trip) return;
+    const empty = trip.score === 0 && trip.pickups === 0 && trip.distance < 20;
+    if (runIsApplied(trip.id) || readPendingRuns().some(item => item.id === trip.id) || empty) clearStorageKey(tripKey);
+    else offerInterruptedTrip(trip);
   }
 
   function spawn() {
@@ -595,6 +966,12 @@
     const targetRiverSpeed = Math.min(390, 190 + elapsed * 3.2 + stageIndex * 15);
     riverSpeed += Math.min(targetRiverSpeed - riverSpeed, 135 * dt);
     runDistance += riverSpeed * dt / 10;
+    tripSaveIn -= dt;
+    if (tripSaveIn <= 0) {
+      tripSaveIn = tripSaveSeconds;
+      persistTrip();
+    }
+    if (tripReward(runDistance, score, collectedCoins) !== hudReward) updateCoinHud();
     if (stageIndex < stages.length - 1 && runDistance >= stages[stageIndex + 1].start) {
       stageIndex++;
       waterGradient = null;
@@ -1074,6 +1451,7 @@
       heldKeys.left = false;
       heldKeys.right = false;
       pause.textContent = '▶';
+      persistTrip();
     }
     profileNotice.textContent = '';
     backupNotice.textContent = '';
@@ -1113,7 +1491,7 @@
   for (const boatOption of boats) {
     document.getElementById(`boat-${boatOption.id}`).addEventListener('click', () => {
       if (economyError) { updateGarageView(); return; }
-      const view = replayEconomy(economy.events);
+      const view = currentView();
       if (view.owned.has(boatOption.id)) {
         if (economy.selected === boatOption.id) return;
         garageNotice.textContent = saveEconomy({ ...economy, selected: boatOption.id })
@@ -1146,20 +1524,18 @@
       backupNotice.textContent = 'La copia no es válida. No se cambió el progreso.';
       return;
     }
-    let nextEconomy = null;
-    if (backup.format === economyBackupFormat) {
-      const localIds = new Set(economy.events.map(event => event.id));
-      const importedIds = new Set(backup.economy.events.map(event => event.id));
-      const localEvents = new Map(economy.events.map(event => [event.id, event]));
-      const conflictingEvent = backup.economy.events.some(event =>
-        localEvents.has(event.id) && JSON.stringify(localEvents.get(event.id)) !== JSON.stringify(event));
-      const localContained = economy.events.every(event => importedIds.has(event.id));
-      const importedContained = backup.economy.events.every(event => localIds.has(event.id));
-      if ((conflictingEvent || (!localContained && !importedContained)) && !economyError) {
-        backupNotice.textContent = 'Las monedas de esta copia y del teléfono son distintas. No se mezclaron para evitar duplicaciones.';
+    if (backup.economy) {
+      const importedCoversLocal = economyCovers(backup.economy, economy);
+      const localCoversImported = economyCovers(economy, backup.economy);
+      if (!economyError && !importedCoversLocal && !localCoversImported) {
+        backupNotice.textContent = economy.base || backup.economy.base
+          ? 'Esta copia no se puede comparar con las monedas del teléfono porque una es anterior a la compactación del historial. Genera una copia nueva en este teléfono. No se cambió el progreso.'
+          : 'Las monedas de esta copia y del teléfono son distintas. No se mezclaron para evitar duplicaciones.';
         return;
       }
-      nextEconomy = localContained || economyError ? backup.economy : economy;
+      const nextEconomy = economyError || importedCoversLocal
+        ? { ...backup.economy, appliedRuns: [...new Set([...(economy.appliedRuns || []), ...(backup.economy.appliedRuns || [])])].slice(-maxAppliedRuns) }
+        : economy;
       if (!saveEconomy(nextEconomy, true)) {
         backupNotice.textContent = 'No se pudieron guardar las monedas. No se cambió el resto del progreso.';
         return;
@@ -1170,7 +1546,8 @@
       runs: Math.max(stats.runs, backup.stats.runs),
       dodged: Math.max(stats.dodged, backup.stats.dodged),
       distance: Math.max(stats.distance, backup.stats.distance),
-      legacyDodged: Math.max(stats.legacyDodged, backup.stats.legacyDodged)
+      legacyDodged: Math.max(stats.legacyDodged, backup.stats.legacyDodged),
+      appliedRuns: [...new Set([...stats.appliedRuns, ...(validRunList(backup.stats.appliedRuns) ? backup.stats.appliedRuns : [])])].slice(-maxAppliedRuns)
     };
     const profileSaved = saveObject(profileKey, nextProfile);
     const statsSaved = saveObject(statsKey, { version: 2, ...nextStats });
@@ -1179,6 +1556,7 @@
     catch (_) { /* Keep the existing record in memory. */ }
     if (profileSaved) Object.assign(profile, nextProfile);
     if (statsSaved) Object.assign(stats, nextStats);
+    settlePending();
     updateProfileBadge();
     updateSettingsView();
     backupNotice.textContent = economyError
@@ -1215,8 +1593,11 @@
     if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') heldKeys.right = false;
     if (activePointerId === null) restoreKeyboardDirection();
   });
+  finishTripButton.addEventListener('click', cashInterruptedTrip);
   play.addEventListener('click', () => {
-    if (state === 'paused') {
+    if (interrupted) {
+      resumeInterruptedTrip();
+    } else if (state === 'paused') {
       state = 'playing';
       overlay.classList.add('hidden');
       pause.textContent = 'Ⅱ';
@@ -1225,37 +1606,29 @@
     }
   });
   pause.addEventListener('click', () => {
-    if (state === 'playing') {
-      state = 'paused';
-      direction = 0;
-      activePointerId = null;
-      boat.vx = 0;
-      heldKeys.left = false;
-      heldKeys.right = false;
-      pause.textContent = '▶';
-      showOverlay('En pausa', `Llevas ${score} puntos.`, 'Continuar');
-    }
+    if (state === 'playing') pauseTrip();
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && settingsReturnState === 'playing') {
       settingsReturnState = 'paused';
       showOverlay('En pausa', `Llevas ${score} puntos.`, 'Continuar');
     }
-    if (document.hidden && state === 'playing') {
-      state = 'paused';
-      direction = 0;
-      activePointerId = null;
-      boat.vx = 0;
-      heldKeys.left = false;
-      heldKeys.right = false;
-      pause.textContent = '▶';
-      showOverlay('En pausa', `Llevas ${score} puntos.`, 'Continuar');
-    }
+    if (document.hidden && state === 'playing') pauseTrip();
+    else if (document.hidden) persistTrip();
   });
+  // Android puede cerrar la WebView sin avisar: el viaje se guarda al ocultar la página
+  // y también cuando MainActivity llama a este gancho antes de pasar a segundo plano.
+  function saveBeforeLeaving() {
+    if (state === 'playing') pauseTrip();
+    else persistTrip();
+  }
+  window.addEventListener('pagehide', saveBeforeLeaving);
+  window.rioAventuraSave = saveBeforeLeaving;
   resizeStage();
   window.addEventListener('resize', resizeStage);
   reset();
   updateProfileBadge();
   updateCoinHud();
+  recoverOnStartup();
   requestAnimationFrame(frame);
 })();

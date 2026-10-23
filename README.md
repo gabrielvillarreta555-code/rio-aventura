@@ -109,6 +109,37 @@ no requieren monedas ni cambian la física. Perfil, récord, estadísticas, comp
 rangos y copias manuales anteriores se conservan al actualizar; la copia manual
 nueva incluye misiones y desbloqueos. No desinstales la app para actualizarla.
 
+La versión 2.3.1 es de estabilidad y no cambia controles, física, colisiones ni
+progresión. El historial de monedas ya no se bloquea al superar los 10.000
+eventos: cuando crece, los eventos antiguos se resumen en un saldo con sus
+compras, rangos y misión del día, y se conserva una huella encadenada para poder
+comparar copias manuales sin mezclar historiales distintos. Los datos de 2.3 se
+leen tal cual y solo se resumen cuando hace falta; los de 2.3 que ya hubieran
+superado el límite se recuperan al abrir la app. Las copias manuales de un
+historial resumido usan un formato nuevo (`rio-aventura-progress-v3`); una copia
+anterior a un resumen no se puede comparar y se rechaza con un aviso, sin tocar
+el progreso.
+
+Cada viaje terminado se registra primero como cierre pendiente y después se
+aplica a las monedas, las estadísticas y el récord. Cada parte se aplica una sola
+vez, así que un fallo de escritura o un cierre brusco ya no pierde ni duplica
+premios de viaje, rangos ni misiones: lo pendiente se completa al abrir la app,
+al empezar otro viaje o al restaurar una copia. El viaje en curso se guarda cada
+3 segundos, al pausar, al abrir Ajustes y cuando la app pasa a segundo plano. Si
+Android cierra la app, al abrirla se ofrece continuar el viaje (con 3 s de
+escudo y sin obstáculos en pantalla) o cobrar lo conseguido; un viaje ya cobrado
+no se ofrece de nuevo. El indicador de monedas muestra la misma recompensa y el
+mismo límite de 80 que se paga al terminar, y el saldo se calcula una sola vez en
+lugar de recorrer el historial en cada moneda recogida. En Android, la app
+resiste que el sistema cierre el proceso de la WebView, no se reinicia al
+cambiar el tamaño de pantalla y bloquea navegar fuera del juego.
+
+Riesgo conocido: las APK de depuración que genera cada ejecución de GitHub
+Actions se firman con una clave de depuración distinta. Android no permite
+actualizar encima de una APK firmada con otra clave; si falla la instalación,
+genera antes una copia manual en Ajustes. Para no depender de esto hace falta
+una clave de firma estable guardada como secreto de GitHub.
+
 ## APK
 
 En GitHub, abre **Actions → Generar APK Río Aventura**. Una compilación correcta
