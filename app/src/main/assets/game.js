@@ -163,7 +163,7 @@
   }
 
   function updateCoinHud() {
-    coinHud.textContent = `🪙 ${replayEconomy(economy.events).coins}`;
+    coinHud.textContent = economyError ? '🪙 !' : `🪙 ${replayEconomy(economy.events).coins}`;
   }
 
   function updateGarageView() {
@@ -895,6 +895,10 @@
     });
   }
   exportProgressButton.addEventListener('click', () => {
+    if (economyError) {
+      backupNotice.textContent = 'Las monedas no se pueden leer. No generes una copia nueva; restaura una copia válida primero.';
+      return;
+    }
     backupText.value = exportBackup();
     backupText.select();
     backupNotice.textContent = 'Copia el texto seleccionado y guárdalo fuera del juego.';
@@ -940,7 +944,9 @@
     if (statsSaved) Object.assign(stats, nextStats);
     updateProfileBadge();
     updateSettingsView();
-    backupNotice.textContent = profileSaved && statsSaved && bestSaved
+    backupNotice.textContent = economyError
+      ? 'La copia antigua restauró perfil y estadísticas, pero no contiene monedas. Restaura una copia nueva para recuperarlas.'
+      : profileSaved && statsSaved && bestSaved
       ? 'Copia restaurada. Se conservaron los mayores récords y totales; las monedas no se duplicaron.'
       : 'No se pudo guardar todo. Revisa los datos antes de cerrar el juego.';
   });
